@@ -26,3 +26,12 @@ https://atcoder.jp/contests/ahc003/tasks/ahc003_a
 - ビジュアライザが見づらい
   - これはポリゴンショックでは、、、
   - ホットスポットみたいなものがあるはずなので、それをうまくブラシとかで表現したい
+
+### コマンド
+
+#### 公式ツールを DL
+
+```bash
+wget -O tester.zip "https://img.atcoder.jp/ahc003/c1ae4a8996958aa31f5f9d3aa3f51033.zip"
+unzip tester.zip
+```

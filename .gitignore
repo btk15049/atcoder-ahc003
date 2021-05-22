@@ -3,7 +3,8 @@
 
 # for atcoder
 *.svg
-official-tools/
+tools/
+*.zip
 
 # Created by https://www.toptal.com/developers/gitignore/api/rust,c++,visualstudiocode,python,flask
 # Edit at https://www.toptal.com/developers/gitignore?templates=rust,c++,visualstudiocode,python,flask
