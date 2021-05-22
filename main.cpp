@@ -33,6 +33,8 @@ namespace constants {
     constexpr int C = 30;
     constexpr int Q = 1000;
 
+    constexpr int EDGE_TOTAL = R * C * 2;
+
     enum direction {
         UP             = 0,
         LEFT           = 1,
@@ -73,21 +75,27 @@ namespace entity {
             for (int i = 0; i < constants::DIRECTION_SIZE; i++) {
                 const auto nx = neighbor(i);
                 if (!nx.isValid()) continue;
-                f(nx);
+                f(nx, constants::opposite(i));
             }
         }
 
         Edge getEdge(int dir) const;
+
+        inline int getId() const { return r * constants::C + c; }
     };
 
     struct Edge {
         Point p;
         int dir;
         Edge(Point p, int dir) : p(p), dir(dir) {}
-        inline Edge versus() {
+        inline Edge versus() const {
             return Edge(p.neighbor(dir), constants::opposite(dir));
         }
-        inline Edge normalize() {
+        inline int getId() const {
+            const auto e = normalize();
+            return (e.p.getId() << 1) + e.dir;
+        }
+        inline Edge normalize() const {
             if (dir >= 2) {
                 return versus();
             }
@@ -97,7 +105,7 @@ namespace entity {
 
     inline Edge Point::getEdge(int dir) const { return Edge(*this, dir); }
 
-    std::ostream& operator<<(std::ostream& os, Point& p) {
+    std::ostream& operator<<(std::ostream& os, const Point& p) {
         os << "(" << p.r << ", " << p.c << ")";
         return os;
     }
@@ -140,21 +148,110 @@ std::ostream& operator<<(std::ostream& os, Pair& p) {
 namespace history {
     struct Query {
         Pair input;
-        std::map<entity::Edge, int> counts;
+        std::bitset<constants::EDGE_TOTAL> edges;
         std::string output;
         int64_t distance;
         Query(Pair input) : input(input) {}
     };
     std::vector<Query> history;
 
+    int totalVisits = 0;
+    std::array<double, constants::R * constants::C * 2>
+        visit; // ucb の 分母に使う
+    std::array<int, constants::R * constants::C * 2> useCount;
+    std::array<double, constants::R * constants::C * 2> averageSum;
+
+
+    void init() {
+        history.reserve(constants::Q);
+        std::fill(visit.begin(), visit.end(), 0.0);
+        std::fill(useCount.begin(), useCount.end(), 0);
+        std::fill(averageSum.begin(), averageSum.end(), 0.0);
+    }
+
+
     void put(Pair p) { history.emplace_back(p); }
-    void put(const std::string& output,
-             const std::map<entity::Edge, int>& counts, int64_t distance) {
+    void put(const std::string& output, const std::vector<entity::Edge>& edges,
+             int64_t distance) {
         history.back().output   = output;
-        history.back().counts   = counts;
         history.back().distance = distance;
+
+        history.back().edges.reset();
+        for (const auto& edge : edges) {
+            const int id = edge.getId();
+            history.back().edges.set(id);
+            visit[id] += 1.0 / edges.size();
+            averageSum[id] += distance / double(edges.size());
+            useCount[id]++;
+        }
+        totalVisits++;
     }
 } // namespace history
+
+
+namespace dijkstra {
+    using cost_t = double;
+    using id_t   = int;
+    struct To {
+        cost_t cost;
+        int prevDir;
+    };
+    std::array<To, constants::R * constants::C> table;
+
+    inline double calcUCB1(entity::Edge e) {
+        const int id = e.normalize().getId();
+        if (history::visit[id] == 0) return 0;
+        const double average = history::averageSum[id] / history::useCount[id];
+        const double expected =
+            std::sqrt(2 * std::log(history::totalVisits) / history::visit[id]);
+        return std::max(0.0, average - expected);
+    }
+
+    auto dijkstra(Pair st) {
+        const auto [s, t] = st;
+
+        for (auto& to : table) {
+            to.cost = 1e9; // TODO: 見直す
+        }
+
+        using T = std::tuple<cost_t, entity::Point>;
+        std::priority_queue<T, std::vector<T>, std::greater<T>> que;
+
+        auto push = [&que](int prevDir, entity::Point next, cost_t c) {
+            auto& target = table[next.getId()];
+            if (target.cost > c) {
+                target.cost    = c;
+                target.prevDir = prevDir;
+                que.emplace(c, next);
+            }
+        };
+
+        push(0, t, 0);
+
+        while (!que.empty()) {
+            const auto [c, cur] = que.top();
+            const double currentCost =
+                c; // ラムダで参照するのにコピーが必要らしい、不便
+            que.pop();
+
+            if (table[cur.getId()].cost < currentCost) continue;
+
+            cur.adjForEach([&](entity::Point nx, int prevDir) {
+                push(prevDir, nx, currentCost + calcUCB1(nx.getEdge(prevDir)));
+            });
+        }
+        std::vector<entity::Edge> edges;
+
+        entity::Point cur = s;
+        while (cur.getId() != t.getId()) {
+            const int d = table[cur.getId()].prevDir;
+            edges.emplace_back(cur, d);
+            cur = cur.neighbor(d);
+        }
+
+        return std::make_tuple(edges, table[s.getId()].cost);
+    }
+} // namespace dijkstra
 
 namespace input {
     std::pair<entity::Point, entity::Point> get(std::istream& is) {
@@ -168,7 +265,7 @@ namespace output {
     struct Builder {
         std::string s;
         std::vector<entity::Point> points;
-        std::map<entity::Edge, int> count;
+        std::vector<entity::Edge> edges;
         Builder(entity::Point s) { points.emplace_back(s); }
 
         const entity::Point& getCurrent() const { return points.back(); }
@@ -176,7 +273,7 @@ namespace output {
         bool add(int dir) {
             auto nx = points.back().neighbor(dir);
             if (!nx.isValid()) return false;
-            count[points.back().getEdge(dir).normalize()]++;
+            edges.emplace_back(points.back().getEdge(dir).normalize());
             points.emplace_back(nx);
             s.push_back(constants::ds[dir]);
 
@@ -196,22 +293,23 @@ namespace output {
 } // namespace output
 
 void solve() {
+    history::init();
     for (int q = 0; q < constants::Q; q++) {
         Pair in = input::get(std::cin);
         history::put(in);
 
+        const auto [edges, cost] = dijkstra::dijkstra(in);
+
         const auto& [s, t] = in;
+
         output::Builder builder(s);
-        while (builder.getCurrent().r > t.r && builder.add(constants::UP))
-            ;
-        while (builder.getCurrent().r < t.r && builder.add(constants::DOWN))
-            ;
-        while (builder.getCurrent().c > t.c && builder.add(constants::LEFT))
-            ;
-        while (builder.getCurrent().c < t.c && builder.add(constants::RIGHT))
-            ;
+        for (auto& it : edges) {
+            builder.add(it.dir);
+            assert(it.versus().p == builder.getCurrent());
+        }
+
         auto distance = builder.fix(std::cin, std::cout);
-        history::put(builder.s, builder.count, distance);
+        history::put(builder.s, builder.edges, distance);
     }
 }
 
