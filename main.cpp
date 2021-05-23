@@ -26,6 +26,7 @@
 #include <ctime>
 #include <fstream>
 #include <map>
+#include <optional>
 
 namespace constants {
 
@@ -48,6 +49,12 @@ namespace constants {
     constexpr char ds[]   = "ULRD";
 
     inline int opposite(int d) { return 3 - d; }
+
+    std::optional<std::array<std::array<int, constants::C>, constants::R>> h =
+        std::nullopt;
+    std::optional<std::array<std::array<int, constants::C>, constants::R>> v =
+        std::nullopt;
+    inline bool hasAns() { return h.has_value(); }
 }; // namespace constants
 
 
@@ -101,6 +108,15 @@ namespace entity {
             }
             return *this;
         }
+        inline int getAns() const {
+            const auto e = normalize().versus();
+            if (e.dir == constants::DOWN) {
+                return (*constants::h)[e.p.r][e.p.c];
+            }
+            else {
+                return (*constants::v)[e.p.r][e.p.c];
+            }
+        }
     };
 
     inline Edge Point::getEdge(int dir) const { return Edge(*this, dir); }
@@ -134,8 +150,6 @@ namespace entity {
     bool operator==(Edge lhs, Edge rhs) {
         return __toValue(lhs.normalize()) == __toValue(rhs.normalize());
     }
-
-
 } // namespace entity
 
 using Pair = std::pair<entity::Point, entity::Point>;
@@ -180,7 +194,7 @@ namespace history {
         for (const auto& edge : edges) {
             const int id = edge.getId();
             history.back().edges.set(id);
-            visit[id] += 1.0 / edges.size();
+            visit[id] += 1.0; // / edges.size();
             averageSum[id] += distance / double(edges.size());
             useCount[id]++;
         }
@@ -204,7 +218,7 @@ namespace dijkstra {
         const double average = history::averageSum[id] / history::useCount[id];
         const double expected =
             std::sqrt(2 * std::log(history::totalVisits) / history::visit[id]);
-        return std::max(0.0, average - expected);
+        return std::max(0.0, average - 500.0 * expected);
     }
 
     auto dijkstra(Pair st) {
@@ -259,6 +273,25 @@ namespace input {
         is >> ret.first >> ret.second;
         return ret;
     }
+
+    void getHV(std::istream& is) {
+        constants::h = std::make_optional<decltype(constants::h)::value_type>();
+        constants::v = std::make_optional<decltype(constants::v)::value_type>();
+        auto& h      = *constants::h;
+        auto& v      = *constants::v;
+        for (int i = 0; i < constants::R; i++) {
+            for (int j = 0; j < constants::C - 1; j++) {
+                is >> h[i][j];
+            }
+        }
+        for (int i = 0; i < constants::R - 1; i++) {
+            for (int j = 0; j < constants::C; j++) {
+                is >> v[i][j];
+            }
+        }
+    }
+
+
 } // namespace input
 
 namespace output {
@@ -292,9 +325,33 @@ namespace output {
 
 } // namespace output
 
+void showStat() {
+    using namespace std;
+    for (int i = 0; i < constants::R - 1; i++) {
+        for (int j = 0; j < constants::C - 1; j++) {
+            cerr << i << " " << j << " ";
+            const auto e =
+                entity::Edge(entity::Point(i, j), constants::DOWN).normalize();
+            cerr << history::averageSum[e.getId()]
+                        / history::useCount[e.getId()]
+                 << " ";
+            cerr << dijkstra::calcUCB1(e) << " ";
+            if (constants::hasAns()) {
+                cerr << e.getAns() << " ";
+            }
+
+            cerr << endl;
+        }
+    }
+}
+
 void solve() {
     history::init();
     for (int q = 0; q < constants::Q; q++) {
+        if (q % 100 == 0) {
+            std::cerr << "# turn " << q << ":" << std::endl;
+            showStat();
+        }
         Pair in = input::get(std::cin);
         history::put(in);
 
