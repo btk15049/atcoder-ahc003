@@ -3,6 +3,7 @@
 test
 *.log
 *.txt
+*.db
 
 # for atcoder
 *.svg

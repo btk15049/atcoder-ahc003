@@ -35,6 +35,20 @@
 #    define DBG(x) ;
 #endif
 
+namespace parameter {
+#ifdef UCB1_BIAS_PARAM
+    constexpr double UCB1_BIAS = UCB1_BIAS_PARAM;
+#else
+    constexpr double UCB1_BIAS        = 45.57451385680645;
+#endif
+
+#ifdef INITIAL_DISTANCE_PARAM
+    constexpr double INITIAL_DISTANCE = INITIAL_DISTANCE_PARAM;
+#else
+    constexpr double INITIAL_DISTANCE = 2630.0967136617014;
+#endif
+} // namespace parameter
+
 
 namespace other {
 
@@ -512,13 +526,13 @@ namespace dijkstra {
 
     inline double calcUCB1(entity::Edge e) {
         const int id = e.normalize().getId();
-        if (history::visit[id] == 0) return 3000;
+        if (history::visit[id] == 0) return parameter::INITIAL_DISTANCE;
         const double average =
             estimatedEdgeCost[id]; // history::averageSum[id] /
                                    // history::useCount[id];
         const double expected =
             std::sqrt(2 * std::log(history::totalVisits) / history::visit[id]);
-        return std::max(0.0, average - 5.0 * expected);
+        return std::max(0.0, average - parameter::UCB1_BIAS * expected);
     }
 
     auto dijkstra(Pair st) {
