@@ -17,4 +17,4 @@ for f in (ls in/)
     cargo run --release --bin tester in/$f $BIN 2>$WORKDIR/logs/$f.log | tee $WORKDIR/scores/$f
 end
 
-echo "score:" (python3 score.py $WORKDIR/scores)
+echo "score:" (python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores)

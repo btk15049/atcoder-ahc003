@@ -23,9 +23,9 @@ for f in (ls in/)
     if test "$cnt" = "$P"
         sleep 2
         set cnt 0
-        python3 score.py $WORKDIR/scores
+        python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores
     end
 end
 
 sleep 2
-echo "score:" (python3 score.py $WORKDIR/scores)
+echo "score:" (python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores)

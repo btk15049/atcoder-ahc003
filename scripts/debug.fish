@@ -8,7 +8,6 @@ end
 set WORKDIR /tmp/(dbus-uuidgen)
 mkdir $WORKDIR
 echo "debug.fish: workdir is $WORKDIR"
-mkdir $WORKDIR/logs
 mkdir $WORKDIR/scores1
 mkdir $WORKDIR/scores2
 
@@ -21,30 +20,30 @@ set cnt 0
 
 for f in (ls in1/)
     # echo $f
-    cargo run --release --bin tester in1/$f $BIN ans/$f 2>$WORKDIR/logs$f.log | tee $WORKDIR/scores1/$f &
+    cargo run --release --bin tester in1/$f $BIN ans/$f 2>log/$f.log | tee $WORKDIR/scores1/$f &
     set cnt (math $cnt + 1)
     if test "$cnt" = "$P"
         sleep 2
         set cnt 0
-        python3 score.py $WORKDIR/scores1
+        python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores1
     end
 end
 
 
 for f in (ls in2/)
     # echo $f
-    cargo run --release --bin tester in2/$f $BIN ans/$f 2>$WORKDIR/logs$f.log | tee $WORKDIR/scores2/$f &
+    cargo run --release --bin tester in2/$f $BIN ans/$f 2>log/$f.log | tee $WORKDIR/scores2/$f &
     set cnt (math $cnt + 1)
     if test "$cnt" = "$P"
         sleep 2
         set cnt 0
-        python3 score.py $WORKDIR/scores2
+        python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores2
     end
 end
 
 sleep 2
 
-echo "M=1:" (python3 score.py $WORKDIR/scores1)
-echo "M=2:" (python3 score.py $WORKDIR/scores2)
+echo "M=1:" (python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores1)
+echo "M=2:" (python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores2)
 
 
