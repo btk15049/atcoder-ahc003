@@ -1,10 +1,11 @@
 *.in
 *.out
 test
+*.log
+*.txt
 
 # for atcoder
 *.svg
-tools/
 *.zip
 
 # Created by https://www.toptal.com/developers/gitignore/api/rust,c++,visualstudiocode,python,flask
