@@ -383,7 +383,6 @@ namespace dijkstra {
         std::vector<std::vector<int>> edges;
         for (const auto& query : history::queries) {
             std::vector<int> es;
-            double sum = 0;
             for (size_t e = query.edges._Find_first(); e < query.edges.size();
                  e        = query.edges._Find_next(e)) {
                 es.push_back(e);
@@ -458,8 +457,8 @@ namespace dijkstra {
                     smoothH(i, constants::C / 2, constants::C);
                 }
                 for (int j = 0; j < constants::C; j++) {
-                    smoothH(j, 0, constants::R / 2);
-                    smoothH(j, constants::R / 2, constants::R);
+                    smoothV(j, 0, constants::R / 2);
+                    smoothV(j, constants::R / 2, constants::R);
                 }
             }
         }
@@ -487,10 +486,14 @@ namespace dijkstra {
             DBG(linearError);
             DBG(squareError);
             if (errors.size() >= 100u) {
-                const double p10 = errors[errors.size() * 10 / 100];
-                const double p30 = errors[errors.size() * 30 / 100];
-                const double p50 = errors[errors.size() * 50 / 100];
-                const double p90 = errors[errors.size() * 90 / 100];
+                [[maybe_unused]] const double p10 =
+                    errors[errors.size() * 10 / 100];
+                [[maybe_unused]] const double p30 =
+                    errors[errors.size() * 30 / 100];
+                [[maybe_unused]] const double p50 =
+                    errors[errors.size() * 50 / 100];
+                [[maybe_unused]] const double p90 =
+                    errors[errors.size() * 90 / 100];
                 DBG(p10);
                 DBG(p30);
                 DBG(p50);
@@ -686,7 +689,7 @@ namespace randomWork {
         currentTimeStamp++;
         stack.clear();
 
-        auto push = [&](entity::Point p, int _) {
+        auto push = [&](entity::Point p, [[maybe_unused]] int _) {
             if (board[p.r + 1][p.c + 1] == NG) {
                 return;
             }
