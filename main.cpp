@@ -298,19 +298,13 @@ namespace history {
     }
 } // namespace history
 
-namespace dijkstra {
-    using cost_t = double;
-    using id_t   = int;
-    struct To {
-        cost_t cost;
-        int prevDir;
-    };
-    std::array<To, constants::R * constants::C> table;
-
+namespace estimate {
     std::array<double, constants::EDGE_TOTAL> estimatedEdgeCost;
+    std::vector<int> usedEdgeIds;
 
+    std::array<double, constants::EDGE_TOTAL> old;
     template <typename F>
-    void edgeForEach(F f) {
+    inline void edgeForEach(F f) {
         for (int i = 0; i < constants::R; i++) {
             for (int j = 0; j < constants::C - 1; j++) {
                 f(entity::Edge(i, j, constants::RIGHT));
@@ -324,11 +318,165 @@ namespace dijkstra {
         }
     }
 
-    void prepare() {
-        std::vector<int> usedEdgeIds;
+    namespace forSmoothing {
+        double sums[constants::N];
+        double squareSums[constants::N];
+        int cnts[constants::N];
 
-        std::array<double, constants::EDGE_TOTAL> old;
+        // cnt = 0 のときに死ぬので注意
+        inline double calcAverage(int bg, int ed) {
+            return (sums[ed] - sums[bg]) / (cnts[ed] - cnts[bg]);
+        }
 
+        inline double calcVariance(int bg, int ed) {
+            const int cnt = cnts[ed] - cnts[bg];
+            if (cnt == 0) return 0.0;
+            const double average = calcAverage(bg, ed);
+            return (squareSums[ed] - squareSums[bg]) / cnt - average * average;
+        };
+
+        inline void prepare(const uint16_t* edgeIds) {
+            for (int i = 0; i < constants::N - 1; i++) {
+                const int id      = edgeIds[i];
+                sums[i + 1]       = sums[i];
+                squareSums[i + 1] = squareSums[i];
+                cnts[i + 1]       = cnts[i];
+                if (history::useCount[id] > 0) {
+                    cnts[i + 1]++;
+                    sums[i + 1] += estimatedEdgeCost[id];
+                    squareSums[i + 1] +=
+                        estimatedEdgeCost[id] * estimatedEdgeCost[id];
+                }
+            }
+        }
+
+        inline int getSplitPoint() {
+            int ret            = constants::N / 2;
+            double minVariance = 1e18;
+
+            for (int i = 0; i <= constants::N - 1; i++) {
+                const double variance = std::max(
+                    calcVariance(0, i), calcVariance(i, constants::N - 1));
+                if (minVariance > variance) {
+                    minVariance = variance;
+                    ret         = i;
+                }
+            }
+            if (xorshift::getInt(2) == 0) ret = (ret + constants::N / 2) / 2;
+            return ret;
+        };
+    } // namespace forSmoothing
+
+    // TODO: 高速化
+    inline void optimizeOne() {
+        if (!usedEdgeIds.empty()) {
+            const int id = usedEdgeIds[xorshift::getInt(usedEdgeIds.size())];
+            std::vector<double> ps;
+            for (const auto& query : history::queries) {
+                if (!query.edgeSet.test(id)) continue;
+                double sum = 0;
+                for (const auto& e : query.edges) {
+                    sum += estimatedEdgeCost[e.getIdFast()];
+                }
+                ps.push_back(query.distance - sum);
+            }
+            std::sort(ps.begin(), ps.end());
+            estimatedEdgeCost[id] += ps[ps.size() / 2] * 0.1;
+            estimatedEdgeCost[id] =
+                std::max(0.0, std::min(10000.0, estimatedEdgeCost[id]));
+        }
+    };
+
+    inline void smoothing(const uint16_t* ids) {
+        using namespace forSmoothing;
+        prepare(ids);
+        const int mid            = getSplitPoint();
+        constexpr double oldBias = 0.5;
+
+        if (cnts[mid] - cnts[0]) {
+            const double average = calcAverage(0, mid);
+            for (int i = 0; i < mid; i++) {
+                const int id = ids[i];
+                if (history::useCount[id] == 0) continue;
+                estimatedEdgeCost[id] = old[id] =
+                    oldBias * estimatedEdgeCost[id] + (1 - oldBias) * average;
+            }
+        }
+
+        if (cnts[constants::N - 1] - cnts[mid]) {
+            const double average = calcAverage(mid, constants::N - 1);
+            for (int i = mid; i < constants::N - 1; i++) {
+                const int id = ids[i];
+                if (history::useCount[id] == 0) continue;
+                estimatedEdgeCost[id] = old[id] =
+                    oldBias * estimatedEdgeCost[id] + (1 - oldBias) * average;
+            }
+        }
+    }
+
+    void showDetail() {
+        if (constants::hasAns()) {
+            {
+                std::vector<double> errors;
+                double errorSum = 0;
+                for (const auto query : history::queries) {
+                    double sum = 0;
+                    for (const auto& e : query.edges) {
+                        sum += estimatedEdgeCost[e.getIdFast()];
+                    }
+                    errors.push_back(abs(sum - query.distance));
+                    errorSum += errors.back();
+                }
+                std::sort(errors.begin(), errors.end());
+
+                for (size_t p : {10, 50, 100, 500, 900}) {
+                    if (p < errors.size()) {
+                        DBG(errors[p]);
+                    }
+                }
+                if (!errors.empty()) {
+                    DBG(errorSum / errors.size());
+                }
+            }
+            double linearError = 0;
+            double squareError = 0;
+            std::vector<double> errors;
+            edgeForEach([&](entity::Edge e) {
+                const int id = e.getIdFast();
+                if (history::useCount[id] == 0) return;
+                const double err = std::abs(estimatedEdgeCost[id] - e.getAns());
+                linearError += err;
+                squareError += err * err;
+                errors.push_back(estimatedEdgeCost[id] - e.getAns());
+            });
+
+            std::sort(errors.begin(), errors.end(),
+                      [&](double l, double r) { return l * l < r * r; });
+
+            linearError /= std::max(usedEdgeIds.size(), size_t(1));
+            squareError /= std::max(usedEdgeIds.size(), size_t(1));
+            squareError = std::sqrt(squareError);
+            DBG(usedEdgeIds.size());
+            DBG(linearError);
+            DBG(squareError);
+            if (errors.size() >= 100u) {
+                [[maybe_unused]] const double p10 =
+                    errors[errors.size() * 10 / 100];
+                [[maybe_unused]] const double p30 =
+                    errors[errors.size() * 30 / 100];
+                [[maybe_unused]] const double p50 =
+                    errors[errors.size() * 50 / 100];
+                [[maybe_unused]] const double p90 =
+                    errors[errors.size() * 90 / 100];
+                DBG(p10);
+                DBG(p30);
+                DBG(p50);
+                DBG(p90);
+            }
+        }
+    }
+
+    void computeEdgeCost() {
         edgeForEach([&](entity::Edge e) {
             const int id = e.getIdFast();
             if (history::useCount[id] == 0) return;
@@ -370,203 +518,49 @@ namespace dijkstra {
                 old[id] = estimatedEdgeCost[id];
             });
 
-            auto optimizeOne = [&]() {
-                if (!usedEdgeIds.empty()) {
-                    const int id =
-                        usedEdgeIds[xorshift::getInt(usedEdgeIds.size())];
-                    std::vector<double> ps;
-                    for (const auto& query : history::queries) {
-                        if (!query.edgeSet.test(id)) continue;
-                        double sum = 0;
-                        for (const auto& e : query.edges) {
-                            sum += estimatedEdgeCost[e.getIdFast()];
-                        }
-                        ps.push_back(query.distance - sum);
-                    }
-                    std::sort(ps.begin(), ps.end());
-                    estimatedEdgeCost[id] += ps[ps.size() / 2] * 0.1;
-                    estimatedEdgeCost[id] =
-                        std::max(0.0, std::min(10000.0, estimatedEdgeCost[id]));
-                }
-            };
-            constexpr double oldBias = 0.5;
-            auto smoothH             = [&](int r, int bg, int ed) {
-                double sum = 0;
-                int cnt    = 0;
-                for (int j = bg; j < ed; j++) {
-                    const int id = entity::hIds[r][j];
-                    if (history::useCount[id] == 0) continue;
-                    sum += estimatedEdgeCost[id];
-                    cnt++;
-                }
-                for (int j = bg; j < ed; j++) {
-                    const int id = entity::hIds[r][j];
-                    if (history::useCount[id] == 0) continue;
-                    estimatedEdgeCost[id] = old[id] =
-                        oldBias * estimatedEdgeCost[id]
-                        + (1 - oldBias) * sum / cnt;
-                }
-            };
-            auto smoothV = [&](int c, int bg, int ed) {
-                double sum = 0;
-                int cnt    = 0;
-                for (int i = bg; i < ed; i++) {
-                    const int id = entity::vIds[c][i];
-                    if (history::useCount[id] == 0) continue;
-                    sum += estimatedEdgeCost[id];
-                    cnt++;
-                }
-                for (int i = bg; i < ed; i++) {
-                    const int id = entity::vIds[c][i];
-                    if (history::useCount[id] == 0) continue;
-                    estimatedEdgeCost[id] = old[id] =
-                        oldBias * estimatedEdgeCost[id]
-                        + (1 - oldBias) * sum / cnt;
-                }
-            };
-            for (int i = 0; i < 10; i++) {
-                optimizeOne();
-            }
-            auto getSplitPoint = [&](const uint16_t* edgeIds) {
-                std::vector<double> sums(constants::N);
-                std::vector<double> squareSums(constants::N);
-                std::vector<int> cnts(constants::N);
-                for (int i = 0; i < constants::N - 1; i++) {
-                    const int id      = edgeIds[i];
-                    sums[i + 1]       = sums[i];
-                    squareSums[i + 1] = squareSums[i];
-                    cnts[i + 1]       = cnts[i];
-                    if (history::useCount[id] > 0) {
-                        cnts[i + 1]++;
-                        sums[i + 1] += estimatedEdgeCost[id];
-                        squareSums[i + 1] +=
-                            estimatedEdgeCost[id] * estimatedEdgeCost[id];
-                    }
-                }
-                int ret            = constants::N / 2;
-                double minVariance = 1e18;
 
-                auto calcVariance = [&](int bg, int ed) {
-                    const int cnt = cnts[ed] - cnts[bg];
-                    if (cnt == 0) return 0.0;
-                    const double average = (sums[ed] - sums[bg]) / cnt;
-                    return (squareSums[ed] - squareSums[bg]) / cnt
-                           - average * average;
-                };
+            // for (int i = 0; i < 10; i++) {
+            //     optimizeOne();
+            // }
 
-                for (int i = 0; i <= constants::N - 1; i++) {
-                    const double variance = std::max(
-                        calcVariance(0, i), calcVariance(i, constants::N - 1));
-                    // std::cerr << variance << " ";
-                    if (minVariance > variance) {
-                        minVariance = variance;
-                        ret         = i;
-                    }
-                }
-                if (xorshift::getInt(2) == 0)
-                    ret = (ret + constants::N / 2) / 2;
-                return ret;
-            };
             if (_ < parameter::SMOOTH_COUNT) {
+                // O(RC)
                 for (int r = 0; r < constants::R; r++) {
-                    const int mid = getSplitPoint(entity::hIds[r]);
-                    smoothH(r, 0, mid);
-                    smoothH(r, mid, constants::C - 1);
+                    smoothing(entity::hIds[r]);
                 }
                 for (int c = 0; c < constants::C; c++) {
-                    const int mid = getSplitPoint(entity::vIds[c]);
-                    smoothV(c, 0, mid);
-                    smoothV(c, mid, constants::R - 1);
+                    smoothing(entity::vIds[c]);
                 }
-                // std::cerr << std::endl;
-                // std::cerr << std::endl;
             }
         }
 
-        auto showErr = [&]() {
-            std::vector<double> errors;
-            double errorSum = 0;
-            for (const auto query : history::queries) {
-                double sum = 0;
-                for (const auto& e : query.edges) {
-                    sum += estimatedEdgeCost[e.getIdFast()];
-                }
-                errors.push_back(abs(sum - query.distance));
-                errorSum += errors.back();
-            }
-            std::sort(errors.begin(), errors.end());
-
-            for (size_t p : {10, 50, 100, 500, 900}) {
-                if (p < errors.size()) {
-                    DBG(errors[p]);
-                }
-            }
-            if (!errors.empty()) {
-                DBG(errorSum / errors.size());
-            }
-        };
-
-        if (constants::hasAns()) {
-            showErr();
-            double linearError = 0;
-            double squareError = 0;
-            std::vector<double> errors;
-            edgeForEach([&](entity::Edge e) {
-                const int id = e.getIdFast();
-                if (history::useCount[id] == 0) return;
-                const double err = std::abs(estimatedEdgeCost[id] - e.getAns());
-                linearError += err;
-                squareError += err * err;
-                errors.push_back(estimatedEdgeCost[id] - e.getAns());
-            });
-
-            std::sort(errors.begin(), errors.end(),
-                      [&](double l, double r) { return l * l < r * r; });
-
-            linearError /= std::max(usedEdgeIds.size(), size_t(1));
-            squareError /= std::max(usedEdgeIds.size(), size_t(1));
-            squareError = std::sqrt(squareError);
-            DBG(usedEdgeIds.size());
-            DBG(linearError);
-            DBG(squareError);
-            if (errors.size() >= 100u) {
-                [[maybe_unused]] const double p10 =
-                    errors[errors.size() * 10 / 100];
-                [[maybe_unused]] const double p30 =
-                    errors[errors.size() * 30 / 100];
-                [[maybe_unused]] const double p50 =
-                    errors[errors.size() * 50 / 100];
-                [[maybe_unused]] const double p90 =
-                    errors[errors.size() * 90 / 100];
-                DBG(p10);
-                DBG(p30);
-                DBG(p50);
-                DBG(p90);
-            }
-            // for (size_t i = 0; i < edges.size(); i++) {
-            //     double sum = 0;
-            //     for (int e : edges[i]) {
-            //         sum += old[e];
-            //     }
-            //     const double diff = history::queries[i].distance - sum;
-            //     // DBG(diff / edges[i].size());
-            // }
-        }
+        showDetail();
     }
+} // namespace estimate
+
+namespace dijkstra {
+    using cost_t = double;
+    using id_t   = int;
+    struct To {
+        cost_t cost;
+        int prevDir;
+    };
+
+    std::array<To, constants::R * constants::C> table;
+
 
     inline double calcUCB1(entity::Edge e) {
         const int id = e.getIdFast();
         if (history::visit[id] == 0) return parameter::INITIAL_DISTANCE;
         const double average =
-            estimatedEdgeCost[id]; // history::averageSum[id] /
-                                   // history::useCount[id];
+            estimate::estimatedEdgeCost[id]; // history::averageSum[id] /
+                                             // history::useCount[id];
         const double expected =
             std::sqrt(2 * std::log(history::totalVisits) / history::visit[id]);
         return std::max(0.0, average - parameter::UCB1_BIAS * expected);
     }
 
     auto dijkstra(Pair st) {
-        prepare();
         const auto [s, t] = st;
 
         for (auto& to : table) {
@@ -677,7 +671,7 @@ void showStat() {
             cerr << i << " " << j << " ";
             const auto e =
                 entity::Edge(entity::Point(i, j), constants::DOWN).normalize();
-            cerr << dijkstra::estimatedEdgeCost[e.getIdFast()] << " ";
+            cerr << estimate::estimatedEdgeCost[e.getIdFast()] << " ";
             cerr << dijkstra::calcUCB1(e) << " ";
             // cerr << v1::estimatedDistance[e.getId()] << " ";
             if (constants::hasAns()) {
@@ -803,6 +797,9 @@ void solve() {
         auto distance = builder.fix(std::cin, std::cout);
         history::put(builder.s, builder.edges, distance);
 
+        if (q != constants::Q - 1) {
+            estimate::computeEdgeCost();
+        }
         // v1::calcEstimateDistance();
     }
 }
