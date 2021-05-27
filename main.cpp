@@ -256,7 +256,8 @@ std::ostream& operator<<(std::ostream& os, Pair& p) {
 namespace history {
     struct Query {
         Pair input;
-        std::bitset<constants::EDGE_TOTAL> edges;
+        std::vector<entity::Edge> edges;
+        std::bitset<constants::EDGE_TOTAL> edgeSet;
         std::string output;
         int64_t distance;
         Query(Pair input) : input(input) {}
@@ -283,16 +284,16 @@ namespace history {
              int64_t distance) {
         queries.back().output   = output;
         queries.back().distance = distance;
-
-        queries.back().edges.reset();
+        queries.back().edges    = edges;
+        queries.back().edgeSet.reset();
         for (const auto& edge : edges) {
             const int id = edge.getIdFast();
-            queries.back().edges.set(id);
+            queries.back().edgeSet.set(id);
             visit[id] += 1.0; // / edges.size();
             averageSum[id] += distance / double(edges.size());
             useCount[id]++;
         }
-        assert(queries.back().edges.count() > 0u);
+        assert(queries.back().edgeSet.count() > 0u);
         totalVisits++;
     }
 } // namespace history
@@ -340,9 +341,8 @@ namespace dijkstra {
         std::vector<std::vector<int>> edges;
         for (const auto& query : history::queries) {
             std::vector<int> es;
-            for (size_t e = query.edges._Find_first(); e < query.edges.size();
-                 e        = query.edges._Find_next(e)) {
-                es.push_back(e);
+            for (const auto& e : query.edges) {
+                es.push_back(e.getIdFast());
             }
             if (es.size() == 0) continue;
             edges.push_back(es);
@@ -376,12 +376,10 @@ namespace dijkstra {
                         usedEdgeIds[xorshift::getInt(usedEdgeIds.size())];
                     std::vector<double> ps;
                     for (const auto& query : history::queries) {
-                        if (!query.edges.test(id)) continue;
+                        if (!query.edgeSet.test(id)) continue;
                         double sum = 0;
-                        for (auto i = query.edges._Find_first();
-                             i < query.edges.size();
-                             i = query.edges._Find_next(i)) {
-                            sum += estimatedEdgeCost[i];
+                        for (const auto& e : query.edges) {
+                            sum += estimatedEdgeCost[e.getIdFast()];
                         }
                         ps.push_back(query.distance - sum);
                     }
@@ -490,9 +488,8 @@ namespace dijkstra {
             double errorSum = 0;
             for (const auto query : history::queries) {
                 double sum = 0;
-                for (auto i = query.edges._Find_first(); i < query.edges.size();
-                     i      = query.edges._Find_next(i)) {
-                    sum += estimatedEdgeCost[i];
+                for (const auto& e : query.edges) {
+                    sum += estimatedEdgeCost[e.getIdFast()];
                 }
                 errors.push_back(abs(sum - query.distance));
                 errorSum += errors.back();
