@@ -47,6 +47,19 @@ namespace parameter {
 #else
     constexpr double INITIAL_DISTANCE = 2630.0967136617014;
 #endif
+
+#ifdef ESTIMATE_COUNT_PARAM
+    constexpr int ESTIMATE_COUNT = ESTIMATE_COUNT_PARAM;
+#else
+    constexpr int ESTIMATE_COUNT      = 20;
+#endif
+
+#ifdef SMOOTH_COUNT_PARAM
+    constexpr int SMOOTH_COUNT = SMOOTH_COUNT_PARAM;
+#else
+    constexpr int SMOOTH_COUNT        = 15;
+#endif
+
 } // namespace parameter
 
 
@@ -406,7 +419,7 @@ namespace dijkstra {
         }
 
 
-        for (int _ = 0; _ < 20; _++) {
+        for (int _ = 0; _ < parameter::ESTIMATE_COUNT; _++) {
             std::fill(estimatedEdgeCost.begin(), estimatedEdgeCost.end(), 0.0);
 
             for (size_t i = 0; i < edges.size(); i++) {
@@ -430,7 +443,7 @@ namespace dijkstra {
             auto smoothH = [&](int r, int bg, int ed) {
                 double sum = 0;
                 int cnt    = 0;
-                for (int j = bg; j < ed - 1; j++) {
+                for (int j = bg; j < ed; j++) {
                     const auto e =
                         entity::Edge(entity::Point(r, j), constants::RIGHT);
                     const int id = e.getId();
@@ -438,7 +451,7 @@ namespace dijkstra {
                     sum += estimatedEdgeCost[id];
                     cnt++;
                 }
-                for (int j = bg; j < ed - 1; j++) {
+                for (int j = bg; j < ed; j++) {
                     const auto e =
                         entity::Edge(entity::Point(r, j), constants::RIGHT);
                     const int id = e.getId();
@@ -449,7 +462,7 @@ namespace dijkstra {
             auto smoothV = [&](int c, int bg, int ed) {
                 double sum = 0;
                 int cnt    = 0;
-                for (int i = bg; i < ed - 1; i++) {
+                for (int i = bg; i < ed; i++) {
                     const auto e =
                         entity::Edge(entity::Point(i, c), constants::DOWN);
                     const int id = e.getId();
@@ -457,7 +470,7 @@ namespace dijkstra {
                     sum += estimatedEdgeCost[id];
                     cnt++;
                 }
-                for (int i = bg; i < ed - 1; i++) {
+                for (int i = bg; i < ed; i++) {
                     const auto e =
                         entity::Edge(entity::Point(i, c), constants::DOWN);
                     const int id = e.getId();
@@ -465,14 +478,14 @@ namespace dijkstra {
                     estimatedEdgeCost[id] = old[id] = sum / cnt;
                 }
             };
-            if (_ < 15) {
+            if (_ < parameter::SMOOTH_COUNT) {
                 for (int i = 0; i < constants::R; i++) {
                     smoothH(i, 0, constants::C / 2);
-                    smoothH(i, constants::C / 2, constants::C);
+                    smoothH(i, constants::C / 2, constants::C - 1);
                 }
                 for (int j = 0; j < constants::C; j++) {
                     smoothV(j, 0, constants::R / 2);
-                    smoothV(j, constants::R / 2, constants::R);
+                    smoothV(j, constants::R / 2, constants::R - 1);
                 }
             }
         }

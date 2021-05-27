@@ -30,11 +30,15 @@ class Result:
 def objective(trial):
     ucb1_bias = trial.suggest_uniform('ucb1_bias', 0, 1000)
     initial_distance = trial.suggest_uniform('initial_distance', 0, 10000)
+    estimate_count = trial.suggest_int('estimate_count', 0, 50)
+    smooth_count = trial.suggest_int('smooth_count', 0, 50)
 
     cpp = f'{ROOT}/main.cpp'
     bin = f'/tmp/bin-{str(uuid.uuid4())}.out'
     simulate.compile(cpp, bin, UCB1_BIAS_PARAM=str(ucb1_bias),
-                     INITIAL_DISTANCE_PARAM=str(initial_distance))
+                     INITIAL_DISTANCE_PARAM=str(initial_distance),
+                     ESTIMATE_COUNT_PARAM=str(estimate_count),
+                     SMOOTH_COUNT_PARAM=str(smooth_count))
 
     result = Result()
 
@@ -58,5 +62,4 @@ if __name__ == '__main__':
 
     study.optimize(objective, n_trials=100)
     print(study.best_trial)
-    print(study.best_params["ucb1_bias"],
-          study.best_params["initial_distance"])
+    print(study.best_params)
