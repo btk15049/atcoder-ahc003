@@ -3,7 +3,7 @@ set REPO_ROOT (dirname (dirname (readlink -m (status --current-filename))))
 
 set WORKDIR /tmp/(dbus-uuidgen)
 mkdir $WORKDIR
-echo "parallel.fish: workdir is $WORKDIR"
+echo "straight.fish: workdir is $WORKDIR"
 mkdir $WORKDIR/logs
 mkdir $WORKDIR/scores
 

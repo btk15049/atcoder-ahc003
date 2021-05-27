@@ -5,6 +5,11 @@ if test "$P" = ""
     set P 10
 end
 
+set S $argv[2]
+if test "$S" = ""
+    set S 2
+end
+
 set WORKDIR /tmp/(dbus-uuidgen)
 mkdir $WORKDIR
 echo "debug.fish: workdir is $WORKDIR"
@@ -22,7 +27,7 @@ for f in (ls in2/)
     cargo run --release --bin tester in2/$f $BIN ans/$f 2>log/$f.log | tee $WORKDIR/scores2/$f &
     set cnt (math $cnt + 1)
     if test "$cnt" = "$P"
-        sleep 2
+        sleep $S
         set cnt 0
         python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores2
     end
@@ -32,13 +37,13 @@ for f in (ls in1/)
     cargo run --release --bin tester in1/$f $BIN ans/$f 2>log/$f.log | tee $WORKDIR/scores1/$f &
     set cnt (math $cnt + 1)
     if test "$cnt" = "$P"
-        sleep 2
+        sleep $S
         set cnt 0
         python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores1
     end
 end
 
-sleep 2
+sleep $S
 
 echo "M=1:" (python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores1)
 echo "M=2:" (python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores2)

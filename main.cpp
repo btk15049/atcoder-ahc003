@@ -51,14 +51,21 @@ namespace parameter {
 #ifdef ESTIMATE_COUNT_PARAM
     constexpr int ESTIMATE_COUNT = ESTIMATE_COUNT_PARAM;
 #else
-    constexpr int ESTIMATE_COUNT      = 20;
+    constexpr int ESTIMATE_COUNT      = 30;
 #endif
 
 #ifdef SMOOTH_COUNT_PARAM
     constexpr int SMOOTH_COUNT = SMOOTH_COUNT_PARAM;
 #else
-    constexpr int SMOOTH_COUNT        = 15;
+    constexpr int SMOOTH_COUNT        = 25;
 #endif
+
+#ifdef OLD_BIAS_PARAM
+    constexpr double OLD_BIAS = OLD_BIAS_PARAM;
+#else
+    constexpr double OLD_BIAS         = 0.1;
+#endif
+
 
 } // namespace parameter
 
@@ -352,6 +359,29 @@ namespace dijkstra {
                         std::max(0.0, std::min(10000.0, estimatedEdgeCost[id]));
                 }
             };
+            constexpr double oldBias = 0.5;
+            // TODO: ここは配列に起こす
+            auto getColumnEdgeIds = [&](int r) {
+                std::array<int, 29> ids;
+                for (int c = 0; c < 29; c++) {
+                    const auto e =
+                        entity::Edge(entity::Point(r, c), constants::RIGHT);
+                    const int id = e.getId();
+                    ids[c]       = id;
+                }
+                return ids;
+            };
+            // TODO: ここは配列に起こす
+            auto getRowEdgeIds = [&](int c) {
+                std::array<int, 29> ids;
+                for (int r = 0; r < 29; r++) {
+                    const auto e =
+                        entity::Edge(entity::Point(r, c), constants::DOWN);
+                    const int id = e.getId();
+                    ids[r]       = id;
+                }
+                return ids;
+            };
             auto smoothH = [&](int r, int bg, int ed) {
                 double sum = 0;
                 int cnt    = 0;
@@ -368,7 +398,9 @@ namespace dijkstra {
                         entity::Edge(entity::Point(r, j), constants::RIGHT);
                     const int id = e.getId();
                     if (history::useCount[id] == 0) continue;
-                    estimatedEdgeCost[id] = old[id] = sum / cnt;
+                    estimatedEdgeCost[id] = old[id] =
+                        oldBias * estimatedEdgeCost[id]
+                        + (1 - oldBias) * sum / cnt;
                 }
             };
             auto smoothV = [&](int c, int bg, int ed) {
@@ -387,21 +419,71 @@ namespace dijkstra {
                         entity::Edge(entity::Point(i, c), constants::DOWN);
                     const int id = e.getId();
                     if (history::useCount[id] == 0) continue;
-                    estimatedEdgeCost[id] = old[id] = sum / cnt;
+                    estimatedEdgeCost[id] = old[id] =
+                        oldBias * estimatedEdgeCost[id]
+                        + (1 - oldBias) * sum / cnt;
                 }
             };
             for (int i = 0; i < 10; i++) {
                 optimizeOne();
             }
+            auto getSplitPoint = [&](const std::array<int, 29>& edgeIds) {
+                std::vector<double> sums(30);
+                std::vector<double> squareSums(30);
+                std::vector<int> cnts(30);
+                for (int i = 0; i < 29; i++) {
+                    const int id      = edgeIds[i];
+                    sums[i + 1]       = sums[i];
+                    squareSums[i + 1] = squareSums[i];
+                    cnts[i + 1]       = cnts[i];
+                    if (history::useCount[id] > 0) {
+                        cnts[i + 1]++;
+                        sums[i + 1] += estimatedEdgeCost[id];
+                        squareSums[i + 1] +=
+                            estimatedEdgeCost[id] * estimatedEdgeCost[id];
+                    }
+                }
+                int ret            = 15;
+                double minVariance = 1e18;
+
+                auto calcVariance = [&](int bg, int ed) {
+                    const int cnt = cnts[ed] - cnts[bg];
+                    if (cnt == 0) return 0.0;
+                    const double average = (sums[ed] - sums[bg]) / cnt;
+                    return (squareSums[ed] - squareSums[bg]) / cnt
+                           - average * average;
+                };
+
+                for (int i = 0; i <= 29; i++) {
+                    const double variance =
+                        std::max(calcVariance(0, i), calcVariance(i, 29));
+                    // std::cerr << variance << " ";
+                    if (minVariance > variance) {
+                        minVariance = variance;
+                        ret         = i;
+                    }
+                }
+                if (xorshift::getInt(2) == 0) ret = (ret + 15) / 2;
+                return ret;
+            };
             if (_ < parameter::SMOOTH_COUNT) {
                 for (int i = 0; i < constants::R; i++) {
-                    smoothH(i, 0, constants::C / 2);
-                    smoothH(i, constants::C / 2, constants::C - 1);
+                    const auto ids = getColumnEdgeIds(i);
+                    // for (auto& it : ids)
+                    // std::cerr << estimatedEdgeCost[it] << " ";
+                    // std::cerr << std::endl;
+                    const int mid = getSplitPoint(ids);
+                    smoothH(i, 0, mid);
+                    smoothH(i, mid, constants::C - 1);
                 }
+                // std::cerr << std::endl;
                 for (int j = 0; j < constants::C; j++) {
-                    smoothV(j, 0, constants::R / 2);
-                    smoothV(j, constants::R / 2, constants::R - 1);
+                    const int mid = getSplitPoint(getRowEdgeIds(j));
+                    smoothV(j, 0, mid);
+                    smoothV(j, mid, constants::R - 1);
                 }
+                // std::cerr << std::endl;
+                // std::cerr << std::endl;
             }
         }
 
@@ -429,9 +511,8 @@ namespace dijkstra {
             }
         };
 
-        // showErr();
-
         if (constants::hasAns()) {
+            showErr();
             double linearError = 0;
             double squareError = 0;
             std::vector<double> errors;
