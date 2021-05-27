@@ -18,26 +18,23 @@ g++ $REPO_ROOT/debug.cpp -std=c++17 -Wall -Wextra -o $BIN
 cd $REPO_ROOT/tools
 set cnt 0
 
-for f in (ls in1/)
-    # echo $f
-    cargo run --release --bin tester in1/$f $BIN ans/$f 2>log/$f.log | tee $WORKDIR/scores1/$f &
-    set cnt (math $cnt + 1)
-    if test "$cnt" = "$P"
-        sleep 2
-        set cnt 0
-        python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores1
-    end
-end
-
-
 for f in (ls in2/)
-    # echo $f
     cargo run --release --bin tester in2/$f $BIN ans/$f 2>log/$f.log | tee $WORKDIR/scores2/$f &
     set cnt (math $cnt + 1)
     if test "$cnt" = "$P"
         sleep 2
         set cnt 0
         python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores2
+    end
+end
+
+for f in (ls in1/)
+    cargo run --release --bin tester in1/$f $BIN ans/$f 2>log/$f.log | tee $WORKDIR/scores1/$f &
+    set cnt (math $cnt + 1)
+    if test "$cnt" = "$P"
+        sleep 2
+        set cnt 0
+        python3 $REPO_ROOT/py-tools/score.py $WORKDIR/scores1
     end
 end
 

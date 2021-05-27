@@ -62,95 +62,26 @@ namespace parameter {
 
 } // namespace parameter
 
+namespace xorshift {
+    constexpr uint64_t next(uint64_t p) {
+        p = p ^ (p << 13);
+        p = p ^ (p >> 7);
+        return p ^ (p << 17);
+    }
 
-namespace other {
-
-    // 少し使いづらいので、行を加算できるようにしておく
-    namespace drken {
-        using namespace std;
-        using D         = double;
-        constexpr D EPS = 1e-10;
-
-        // matrix
-        template <class T>
-        struct Matrix {
-            vector<vector<T>> val;
-            Matrix() : val() {}
-            Matrix(int n, int m, T x = 0) : val(n, vector<T>(m, x)) {}
-            void init(int n, int m, T x = 0) { val.assign(n, vector<T>(m, x)); }
-            size_t size() const { return val.size(); }
-            inline vector<T>& operator[](int i) { return val[i]; }
-            void add(vector<T> v) { val.emplace_back(v); }
-        };
-
-        template <class T>
-        int GaussJordan(Matrix<T>& A, bool is_extended = false) {
-            int m = A.size(), n = A[0].size();
-            int rank = 0;
-            for (int col = 0; col < n; ++col) {
-                // 拡大係数行列の場合は最後の列は掃き出ししない
-                if (is_extended && col == n - 1) break;
-
-                // ピボットを探す
-                int pivot = -1;
-                T ma      = EPS;
-                for (int row = rank; row < m; ++row) {
-                    if (abs(A[row][col]) > ma) {
-                        ma    = abs(A[row][col]);
-                        pivot = row;
-                    }
-                }
-                // ピボットがなかったら次の列へ
-                if (pivot == -1) continue;
-
-                // まずは行を swap
-                swap(A[pivot], A[rank]);
-
-                // ピボットの値を 1 にする
-                auto fac = A[rank][col];
-                for (int col2 = 0; col2 < n; ++col2) A[rank][col2] /= fac;
-
-                // ピボットのある列の値がすべて 0 になるように掃き出す
-                for (int row = 0; row < m; ++row) {
-                    if (row != rank && abs(A[row][col]) > EPS) {
-                        auto fac = A[row][col];
-                        for (int col2 = 0; col2 < n; ++col2) {
-                            A[row][col2] -= A[rank][col2] * fac;
-                        }
-                    }
-                }
-                ++rank;
-            }
-            return rank;
+    struct Generator {
+        uint64_t seed;
+        Generator(uint64_t seed = 111111111u) : seed(seed) {}
+        inline uint64_t gen() {
+            seed = next(seed);
+            return seed;
         }
+    } _gen;
 
-        template <class T>
-        vector<T> linear_equation(Matrix<T> A, vector<T> b) {
-            // extended
-            int m = A.size(), n = A[0].size();
-            Matrix<T> M(m, n + 1);
-            for (int i = 0; i < m; ++i) {
-                for (int j = 0; j < n; ++j) M[i][j] = A[i][j];
-                M[i][n] = b[i];
-            }
-            int rank = GaussJordan(M, true);
+    inline int64_t getInt(int64_t n) { return _gen.gen() % n; }
 
-            // check if it has no solution
-            vector<T> res;
-            for (int row = rank; row < m; ++row) {
-                if (abs(M[row][n]) > 1) {
-                    DBG(row);
-                    DBG(M[row][n]);
-                    return res;
-                }
-            }
-            // answer
-            res.assign(n, 0);
-            for (int i = 0; i < rank; ++i) res[i] = M[i][n];
-            return res;
-        }
-    } // namespace drken
-} // namespace other
+
+} // namespace xorshift
 
 namespace constants {
 
@@ -327,46 +258,6 @@ namespace history {
     }
 } // namespace history
 
-
-namespace v1 {
-    // 最小二乗法で求めた各辺の推定値
-    std::array<double, constants::EDGE_TOTAL> estimatedDistance;
-
-    void calcEstimateDistance() {
-        other::drken::Matrix<double> X;
-        std::vector<double> Y;
-        for (int k = 0; k < constants::EDGE_TOTAL; k++) {
-            // 左辺
-            std::vector<double> x(constants::EDGE_TOTAL, 0.0);
-            for (const auto& query : history::queries) {
-                if (!query.edges.test(k)) continue;
-                for (int j = 0; j < constants::EDGE_TOTAL; j++) {
-                    if (query.edges.test(j)) {
-                        x[j] += 1.0;
-                    }
-                }
-            }
-            double y = 0;
-            // 右辺
-            for (const auto& query : history::queries) {
-                if (query.edges.test(k)) {
-                    y += query.distance;
-                }
-            }
-            X.add(x);
-            Y.push_back(y);
-        }
-
-        const auto A = other::drken::linear_equation(X, Y);
-        if (!A.empty()) {
-            for (int i = 0; i < constants::EDGE_TOTAL; i++) {
-                estimatedDistance[i] = A[i];
-            }
-        }
-    }
-
-} // namespace v1
-
 namespace dijkstra {
     using cost_t = double;
     using id_t   = int;
@@ -394,14 +285,14 @@ namespace dijkstra {
     }
 
     void prepare() {
-        int usedEdges = 0;
+        std::vector<int> usedEdgeIds;
 
         std::array<double, constants::EDGE_TOTAL> old;
 
         edgeForEach([&](entity::Edge e) {
             const int id = e.getId();
             if (history::useCount[id] == 0) return;
-            usedEdges++;
+            usedEdgeIds.push_back(id);
             estimatedEdgeCost[id] =
                 history::averageSum[id] / history::useCount[id];
             old[id] = estimatedEdgeCost[id];
@@ -440,6 +331,27 @@ namespace dijkstra {
                 old[id] = estimatedEdgeCost[id];
             });
 
+            auto optimizeOne = [&]() {
+                if (!usedEdgeIds.empty()) {
+                    const int id =
+                        usedEdgeIds[xorshift::getInt(usedEdgeIds.size())];
+                    std::vector<double> ps;
+                    for (const auto& query : history::queries) {
+                        if (!query.edges.test(id)) continue;
+                        double sum = 0;
+                        for (auto i = query.edges._Find_first();
+                             i < query.edges.size();
+                             i = query.edges._Find_next(i)) {
+                            sum += estimatedEdgeCost[i];
+                        }
+                        ps.push_back(query.distance - sum);
+                    }
+                    std::sort(ps.begin(), ps.end());
+                    estimatedEdgeCost[id] += ps[ps.size() / 2] * 0.1;
+                    estimatedEdgeCost[id] =
+                        std::max(0.0, std::min(10000.0, estimatedEdgeCost[id]));
+                }
+            };
             auto smoothH = [&](int r, int bg, int ed) {
                 double sum = 0;
                 int cnt    = 0;
@@ -478,6 +390,9 @@ namespace dijkstra {
                     estimatedEdgeCost[id] = old[id] = sum / cnt;
                 }
             };
+            for (int i = 0; i < 10; i++) {
+                optimizeOne();
+            }
             if (_ < parameter::SMOOTH_COUNT) {
                 for (int i = 0; i < constants::R; i++) {
                     smoothH(i, 0, constants::C / 2);
@@ -489,6 +404,32 @@ namespace dijkstra {
                 }
             }
         }
+
+        auto showErr = [&]() {
+            std::vector<double> errors;
+            double errorSum = 0;
+            for (const auto query : history::queries) {
+                double sum = 0;
+                for (auto i = query.edges._Find_first(); i < query.edges.size();
+                     i      = query.edges._Find_next(i)) {
+                    sum += estimatedEdgeCost[i];
+                }
+                errors.push_back(abs(sum - query.distance));
+                errorSum += errors.back();
+            }
+            std::sort(errors.begin(), errors.end());
+
+            for (size_t p : {10, 50, 100, 500, 900}) {
+                if (p < errors.size()) {
+                    DBG(errors[p]);
+                }
+            }
+            if (!errors.empty()) {
+                DBG(errorSum / errors.size());
+            }
+        };
+
+        // showErr();
 
         if (constants::hasAns()) {
             double linearError = 0;
@@ -506,10 +447,10 @@ namespace dijkstra {
             std::sort(errors.begin(), errors.end(),
                       [&](double l, double r) { return l * l < r * r; });
 
-            linearError /= std::max(usedEdges, 1);
-            squareError /= std::max(usedEdges, 1);
+            linearError /= std::max(usedEdgeIds.size(), size_t(1));
+            squareError /= std::max(usedEdgeIds.size(), size_t(1));
             squareError = std::sqrt(squareError);
-            DBG(usedEdges);
+            DBG(usedEdgeIds.size());
             DBG(linearError);
             DBG(squareError);
             if (errors.size() >= 100u) {
