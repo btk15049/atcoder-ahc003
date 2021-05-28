@@ -39,31 +39,31 @@ namespace parameter {
 #ifdef UCB1_BIAS_PARAM
     constexpr double UCB1_BIAS = UCB1_BIAS_PARAM;
 #else
-    constexpr double UCB1_BIAS        = 45.57451385680645;
+    constexpr double UCB1_BIAS        = 45.5;
 #endif
 
 #ifdef INITIAL_DISTANCE_PARAM
     constexpr double INITIAL_DISTANCE = INITIAL_DISTANCE_PARAM;
 #else
-    constexpr double INITIAL_DISTANCE = 2630.0967136617014;
+    constexpr double INITIAL_DISTANCE = 3088;
 #endif
 
 #ifdef ESTIMATE_COUNT_PARAM
     constexpr int ESTIMATE_COUNT = ESTIMATE_COUNT_PARAM;
 #else
-    constexpr int ESTIMATE_COUNT      = 30;
+    constexpr int ESTIMATE_COUNT      = 33;
 #endif
 
 #ifdef SMOOTH_COUNT_PARAM
     constexpr int SMOOTH_COUNT = SMOOTH_COUNT_PARAM;
 #else
-    constexpr int SMOOTH_COUNT        = 25;
+    constexpr int SMOOTH_COUNT        = 27;
 #endif
 
 #ifdef OLD_BIAS_PARAM
     constexpr double OLD_BIAS = OLD_BIAS_PARAM;
 #else
-    constexpr double OLD_BIAS         = 0.1;
+    constexpr double OLD_BIAS         = 0.3;
 #endif
 
 
