@@ -1,20 +1,29 @@
 #![allow(non_snake_case, dead_code, unused_imports, unused_macros)]
 
+use proconio::{input, marker::*};
 use rand::prelude::*;
 use std::io::prelude::*;
-use proconio::{input, marker::*};
-use svg::node::element::{Rectangle, Circle, Path, path::Data};
+use svg::node::element::{path::Data, Circle, Path, Rectangle};
 
 pub trait SetMinMax {
 	fn setmin(&mut self, v: Self) -> bool;
 	fn setmax(&mut self, v: Self) -> bool;
 }
-impl<T> SetMinMax for T where T: PartialOrd {
+impl<T> SetMinMax for T
+where
+	T: PartialOrd,
+{
 	fn setmin(&mut self, v: T) -> bool {
-			*self > v && { *self = v; true }
+		*self > v && {
+			*self = v;
+			true
+		}
 	}
 	fn setmax(&mut self, v: T) -> bool {
-			*self < v && { *self = v; true }
+		*self < v && {
+			*self = v;
+			true
+		}
 	}
 }
 
@@ -45,7 +54,7 @@ pub struct Input {
 impl std::fmt::Display for Input {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		for i in 0..N {
-			for j in 0..N-1 {
+			for j in 0..N - 1 {
 				if j > 0 {
 					write!(f, " ")?;
 				}
@@ -53,7 +62,7 @@ impl std::fmt::Display for Input {
 			}
 			writeln!(f)?;
 		}
-		for i in 0..N-1 {
+		for i in 0..N - 1 {
 			for j in 0..N {
 				if j > 0 {
 					write!(f, " ")?;
@@ -63,7 +72,11 @@ impl std::fmt::Display for Input {
 			writeln!(f)?;
 		}
 		for k in 0..Q {
-			writeln!(f, "{} {} {} {} {} {}", self.s[k].0, self.s[k].1, self.t[k].0, self.t[k].1, self.a[k], self.e[k])?;
+			writeln!(
+				f,
+				"{} {} {} {} {} {}",
+				self.s[k].0, self.s[k].1, self.t[k].0, self.t[k].1, self.a[k], self.e[k]
+			)?;
 		}
 		Ok(())
 	}
@@ -96,7 +109,15 @@ pub fn read_input_str(f: &str) -> Input {
 		e.push(ek);
 	}
 	let m = 0;
-	Input { h, v, s, t, a, e, m }
+	Input {
+		h,
+		v,
+		s,
+		t,
+		a,
+		e,
+		m,
+	}
 }
 
 pub fn read_output_str(_input: &Input, f: &str) -> Output {
@@ -119,7 +140,7 @@ pub fn compute_score_detail(input: &Input, out: &Output) -> (i64, String) {
 	let mut last100 = 0.0;
 	for k in 0..Q {
 		if k >= out.len() {
-			return (0, "wrong number of outputs".to_owned())
+			return (0, "wrong number of outputs".to_owned());
 		}
 		match compute_path_length(input, k, &out[k], &mut visited) {
 			Ok((b, _)) => {
@@ -136,27 +157,42 @@ pub fn compute_score_detail(input: &Input, out: &Output) -> (i64, String) {
 						last50 -= scores[k - 50];
 						if k >= 100 {
 							last100 -= scores[k - 100];
-						}	
-					}	
+						}
+					}
 				}
 				score = score * 0.998 + scores[k];
-				eprintln!("turn {:03}: {} {} {} {}", k, scores[k], last10 / 10.0, last50 / 50.0, last100 / 100.0);
-			},
-			Err(s) => {
-				return (0, s)
+				eprintln!(
+					"turn {:03}: {} {} {} {}",
+					k,
+					scores[k],
+					last10 / 10.0,
+					last50 / 50.0,
+					last100 / 100.0
+				);
 			}
+			Err(s) => return (0, s),
 		}
 	}
 	((score * 2312311.0).round() as i64, String::new())
 }
 
-pub fn compute_path_length(input: &Input, k: usize, path: &str, visited: &mut Vec<Vec<usize>>) -> Result<(i32, Vec<(usize, usize)>), String> {
+pub fn compute_path_length(
+	input: &Input,
+	k: usize,
+	path: &str,
+	visited: &mut Vec<Vec<usize>>,
+) -> Result<(i32, Vec<(usize, usize)>), String> {
 	let mut p = input.s[k];
 	let mut ps = vec![p];
 	let mut sum = 0;
 	for c in path.chars() {
 		if visited[p.0][p.1] == k {
-			return Err(format!("visiting ({},{}) twice (query {})", p.0, p.1, k + 1));
+			return Err(format!(
+				"visiting ({},{}) twice (query {})",
+				p.0,
+				p.1,
+				k + 1
+			));
 		}
 		visited[p.0][p.1] = k;
 		match c {
@@ -166,29 +202,29 @@ pub fn compute_path_length(input: &Input, k: usize, path: &str, visited: &mut Ve
 				}
 				p.0 -= 1;
 				sum += input.v[p.0][p.1];
-			},
+			}
 			'L' => {
 				if p.1 == 0 {
 					return Err(format!("going outside the map (query {})", k + 1));
 				}
 				p.1 -= 1;
 				sum += input.h[p.0][p.1];
-			},
+			}
 			'D' => {
 				if p.0 == N - 1 {
 					return Err(format!("going outside the map (query {})", k + 1));
 				}
 				sum += input.v[p.0][p.1];
 				p.0 += 1;
-			},
+			}
 			'R' => {
 				if p.1 == N - 1 {
 					return Err(format!("going outside the map (query {})", k + 1));
 				}
 				sum += input.h[p.0][p.1];
 				p.1 += 1;
-			},
-			_ => return Err(format!("unexpected char: {}", c))
+			}
+			_ => return Err(format!("unexpected char: {}", c)),
 		}
 		ps.push(p);
 	}
@@ -224,11 +260,16 @@ fn length(hs: &Vec<Vec<i32>>, vs: &Vec<Vec<i32>>, p: (usize, usize), dir: usize)
 		1 => hs[p.0][p.1 - 1],
 		2 => vs[p.0][p.1],
 		3 => hs[p.0][p.1],
-		_ => unreachable!()
+		_ => unreachable!(),
 	}
 }
 
-pub fn compute_shortest_path(hs: &Vec<Vec<i32>>, vs: &Vec<Vec<i32>>, s: (usize, usize), t: (usize, usize)) -> (String, i32) {
+pub fn compute_shortest_path(
+	hs: &Vec<Vec<i32>>,
+	vs: &Vec<Vec<i32>>,
+	s: (usize, usize),
+	t: (usize, usize),
+) -> (String, i32) {
 	let mut dist = mat![INF; N; N];
 	let mut prev = mat![!0; N; N];
 	let mut que = std::collections::BinaryHeap::new();
@@ -266,7 +307,13 @@ pub fn gen(seed: u64) -> Input {
 	let mut rng = rand_chacha::ChaCha20Rng::seed_from_u64(seed);
 	let D = rng.gen_range(100, 2001);
 	let M = rng.gen_range(1, 3u32) as usize;
-	let H = (0..N).map(|_| (0..M).map(|_| rng.gen_range(1000 + D, 9001 - D)).collect::<Vec<_>>()).collect::<Vec<_>>();
+	let H = (0..N)
+		.map(|_| {
+			(0..M)
+				.map(|_| rng.gen_range(1000 + D, 9001 - D))
+				.collect::<Vec<_>>()
+		})
+		.collect::<Vec<_>>();
 	let mut x = vec![vec![]; N];
 	for i in 0..N {
 		x[i].push(0);
@@ -278,12 +325,18 @@ pub fn gen(seed: u64) -> Input {
 	let mut h = mat![0; N; N - 1];
 	for i in 0..N {
 		for p in 0..M {
-			for j in x[i][p]..x[i][p+1] {
+			for j in x[i][p]..x[i][p + 1] {
 				h[i][j] = H[i][p] + rng.gen_range(-D, D + 1);
 			}
 		}
 	}
-	let V = (0..N).map(|_| (0..M).map(|_| rng.gen_range(1000 + D, 9001 - D)).collect::<Vec<_>>()).collect::<Vec<_>>();
+	let V = (0..N)
+		.map(|_| {
+			(0..M)
+				.map(|_| rng.gen_range(1000 + D, 9001 - D))
+				.collect::<Vec<_>>()
+		})
+		.collect::<Vec<_>>();
 	let mut y = vec![vec![]; N];
 	for j in 0..N {
 		y[j].push(0);
@@ -295,7 +348,7 @@ pub fn gen(seed: u64) -> Input {
 	let mut v = mat![0; N - 1; N];
 	for j in 0..N {
 		for p in 0..M {
-			for i in y[j][p]..y[j][p+1] {
+			for i in y[j][p]..y[j][p + 1] {
 				v[i][j] = V[j][p] + rng.gen_range(-D, D + 1);
 			}
 		}
@@ -308,8 +361,14 @@ pub fn gen(seed: u64) -> Input {
 		let mut sk = (0, 0);
 		let mut tk = (0, 0);
 		while dist(sk, tk) < 10 {
-			sk = (rng.gen_range(0, N as u32) as usize, rng.gen_range(0, N as u32) as usize);
-			tk = (rng.gen_range(0, N as u32) as usize, rng.gen_range(0, N as u32) as usize);
+			sk = (
+				rng.gen_range(0, N as u32) as usize,
+				rng.gen_range(0, N as u32) as usize,
+			);
+			tk = (
+				rng.gen_range(0, N as u32) as usize,
+				rng.gen_range(0, N as u32) as usize,
+			);
 		}
 		s.push(sk);
 		t.push(tk);
@@ -317,15 +376,33 @@ pub fn gen(seed: u64) -> Input {
 		e.push(rng.gen_range(0.9, 1.1));
 	}
 	let m = M as i32;
-	Input { h, v, s, t, a, e, m }
+	Input {
+		h,
+		v,
+		s,
+		t,
+		a,
+		e,
+		m,
+	}
 }
 
 fn rect(x: usize, y: usize, w: usize, h: usize, fill: &str) -> Rectangle {
-	Rectangle::new().set("x", x).set("y", y).set("width", w).set("height", h).set("fill", fill)
+	Rectangle::new()
+		.set("x", x)
+		.set("y", y)
+		.set("width", w)
+		.set("height", h)
+		.set("fill", fill)
 }
 
 fn text(x: usize, y: usize, size: usize, s: &str) -> svg::node::element::Text {
-	svg::node::element::Text::new().set("x", x).set("y", y).set("font-size", size).set("text-anchor", "middle").add(svg::node::Text::new(s))
+	svg::node::element::Text::new()
+		.set("x", x)
+		.set("y", y)
+		.set("font-size", size)
+		.set("text-anchor", "middle")
+		.add(svg::node::Text::new(s))
 }
 
 // 0 <= val <= 1
@@ -338,16 +415,21 @@ fn color(val: f64) -> String {
 	}
 }
 
-pub fn vis(input: &Input, out: &Output, show_map: bool, show_k: usize, show_edge_length: bool) -> (i64, String, String) {
+pub fn vis(
+	input: &Input,
+	out: &Output,
+	show_map: bool,
+	show_k: usize,
+	show_edge_length: bool,
+) -> (i64, String, String) {
 	let (score, mut err) = compute_score_detail(input, out);
 	const S: usize = 30;
 	const H: usize = 300;
-	let height = if show_map {
-		20 + N * S
-	} else {
-		0
-	};
-	let mut doc = svg::Document::new().set("viewBox", (0, 0, 20 + N * S + 20, height + H)).set("width", 20 + N * S + 20).set("height", height + H);
+	let height = if show_map { 20 + N * S } else { 0 };
+	let mut doc = svg::Document::new()
+		.set("viewBox", (0, 0, 20 + N * S + 20, height + H))
+		.set("width", 20 + N * S + 20)
+		.set("height", height + H);
 	doc = doc.add(rect(0, 0, 20 + N * S + 20, height + H, "white"));
 	if show_map {
 		for i in 0..N {
@@ -357,25 +439,41 @@ pub fn vis(input: &Input, out: &Output, show_map: bool, show_k: usize, show_edge
 		for i in 0..N {
 			for j in 0..N {
 				if j + 1 < N {
-					let data = Data::new().move_to((20 + S * j + S / 2, 20 + S * i + S / 2)).line_by((S, 0));
-					let path = Path::new().set("stroke", color((input.h[i][j] as f64 - 1000.0) / 8000.0)).set("stroke-width", 3).set("d", data);
+					let data = Data::new()
+						.move_to((20 + S * j + S / 2, 20 + S * i + S / 2))
+						.line_by((S, 0));
+					let path = Path::new()
+						.set("stroke", color((input.h[i][j] as f64 - 1000.0) / 8000.0))
+						.set("stroke-width", 3)
+						.set("d", data);
 					doc = doc.add(path);
 				}
 				if i + 1 < N {
-					let data = Data::new().move_to((20 + S * j + S / 2, 20 + S * i + S / 2)).line_by((0, S));
-					let path = Path::new().set("stroke", color((input.v[i][j] as f64 - 1000.0) / 8000.0)).set("stroke-width", 3).set("d", data);
+					let data = Data::new()
+						.move_to((20 + S * j + S / 2, 20 + S * i + S / 2))
+						.line_by((0, S));
+					let path = Path::new()
+						.set("stroke", color((input.v[i][j] as f64 - 1000.0) / 8000.0))
+						.set("stroke-width", 3)
+						.set("d", data);
 					doc = doc.add(path);
 				}
 			}
 		}
 		if show_k < Q {
-			let (path_a, a) = compute_shortest_path(&input.h, &input.v, input.s[show_k], input.t[show_k]);
-			let path_a = compute_path_length(&input, show_k, &path_a, &mut mat![!0; N; N]).unwrap().1;
+			let (path_a, a) =
+				compute_shortest_path(&input.h, &input.v, input.s[show_k], input.t[show_k]);
+			let path_a = compute_path_length(&input, show_k, &path_a, &mut mat![!0; N; N])
+				.unwrap()
+				.1;
 			if err.len() > 0 {
 				err += "<br>";
 			}
 			err += &format!(" <font color='forestgreen'>a = {}</font>", a);
-			let mut data = Data::new().move_to((20 + S * path_a[0].1 + S / 2 + 8, 20 + S * path_a[0].0 + S / 2 + 8));
+			let mut data = Data::new().move_to((
+				20 + S * path_a[0].1 + S / 2 + 8,
+				20 + S * path_a[0].0 + S / 2 + 8,
+			));
 			for p in 1..path_a.len() {
 				let (i, j) = path_a[p - 1];
 				let (i2, j2) = path_a[p];
@@ -383,12 +481,21 @@ pub fn vis(input: &Input, out: &Output, show_map: bool, show_k: usize, show_edge
 				let dj = j2 as i32 - j as i32;
 				data = data.line_by((dj * S as i32, di * S as i32));
 			}
-			let path = Path::new().set("fill", "none").set("stroke", "forestgreen").set("stroke-width", 6).set("d", data);
+			let path = Path::new()
+				.set("fill", "none")
+				.set("stroke", "forestgreen")
+				.set("stroke-width", 6)
+				.set("d", data);
 			doc = doc.add(path);
 			if show_k < out.len() {
-				if let Ok((b, path_b)) = compute_path_length(&input, show_k, &out[show_k], &mut mat![!0; N; N]) {
+				if let Ok((b, path_b)) =
+					compute_path_length(&input, show_k, &out[show_k], &mut mat![!0; N; N])
+				{
 					err += &format!(" <font color='chocolate'>b={}</font>", b);
-					let mut data = Data::new().move_to((20 + S * path_b[0].1 + S / 2 - 8, 20 + S * path_b[0].0 + S / 2 - 8));
+					let mut data = Data::new().move_to((
+						20 + S * path_b[0].1 + S / 2 - 8,
+						20 + S * path_b[0].0 + S / 2 - 8,
+					));
 					for p in 1..path_b.len() {
 						let (i, j) = path_b[p - 1];
 						let (i2, j2) = path_b[p];
@@ -396,7 +503,11 @@ pub fn vis(input: &Input, out: &Output, show_map: bool, show_k: usize, show_edge
 						let dj = j2 as i32 - j as i32;
 						data = data.line_by((dj * S as i32, di * S as i32));
 					}
-					let path = Path::new().set("fill", "none").set("stroke", "chocolate").set("stroke-width", 6).set("d", data);
+					let path = Path::new()
+						.set("fill", "none")
+						.set("stroke", "chocolate")
+						.set("stroke-width", 6)
+						.set("d", data);
 					doc = doc.add(path);
 				}
 			}
@@ -405,35 +516,61 @@ pub fn vis(input: &Input, out: &Output, show_map: bool, show_k: usize, show_edge
 			for i in 0..N {
 				for j in 0..N {
 					if j + 1 < N {
-						doc = doc.add(text(20 + S * j + S, 20 + S * i + S / 2 - 3, 9, &format!("{}", input.h[i][j])));
+						doc = doc.add(text(
+							20 + S * j + S,
+							20 + S * i + S / 2 - 3,
+							9,
+							&format!("{}", input.h[i][j]),
+						));
 					}
 					if i + 1 < N {
-						doc = doc.add(text(20 + S * j + S - 3, 20 + S * i + S, 9, &format!("{}", input.v[i][j])));
+						doc = doc.add(text(
+							20 + S * j + S - 3,
+							20 + S * i + S,
+							9,
+							&format!("{}", input.v[i][j]),
+						));
 					}
 				}
 			}
 		}
 		for i in 0..N {
 			for j in 0..N {
-				let circle = Circle::new().set("cx", 20 + i * S + S / 2).set("cy", 20 + j * S + S / 2).set("r", 5).set("fill", "black");
+				let circle = Circle::new()
+					.set("cx", 20 + i * S + S / 2)
+					.set("cy", 20 + j * S + S / 2)
+					.set("r", 5)
+					.set("fill", "black");
 				doc = doc.add(circle);
 			}
 		}
 	}
-	doc = doc.add(rect(40, height + 20, S * N - 40, H - 60, "none").set("stroke", "black").set("stroke-width", 2));
+	doc = doc.add(
+		rect(40, height + 20, S * N - 40, H - 60, "none")
+			.set("stroke", "black")
+			.set("stroke-width", 2),
+	);
 	doc = doc.add(text(20, height + H / 2, 20, "a/b"));
 	doc = doc.add(text(20, height + 30, 20, "1"));
 	doc = doc.add(text(20, height + H - 30, 20, "0"));
 	doc = doc.add(text(20 + S * N / 2, height + H - 15, 20, "k"));
 	doc = doc.add(text(40, height + H - 15, 20, "1"));
-	doc = doc.add(text(20 + S * N - S / 2, height + H - 15, 20, &Q.to_string()));
+	doc = doc.add(text(
+		20 + S * N - S / 2,
+		height + H - 15,
+		20,
+		&Q.to_string(),
+	));
 	let mut used = mat![!0; N; N];
 	for k in 0..Q.min(out.len()) {
 		if let Ok((b, _)) = compute_path_length(&input, k, &out[k], &mut used) {
 			let ab = input.a[k] as f64 / b as f64;
 			let circle = Circle::new()
 				.set("cx", 40 + (S * N - 40) * k / (Q - 1))
-				.set("cy", height + H - 40 - ((H - 60) as f64 * ab).round() as usize)
+				.set(
+					"cy",
+					height + H - 40 - ((H - 60) as f64 * ab).round() as usize,
+				)
 				.set("r", if k != show_k { 3 } else { 6 })
 				.set("fill", if k != show_k { "red" } else { "blue" })
 				.set("fill-opacity", 0.5);
