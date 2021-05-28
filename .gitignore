@@ -4,6 +4,7 @@ test
 *.log
 *.txt
 *.db
+perf.*
 
 # for atcoder
 *.svg

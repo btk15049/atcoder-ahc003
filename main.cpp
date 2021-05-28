@@ -257,6 +257,7 @@ namespace history {
     struct Query {
         Pair input;
         std::vector<entity::Edge> edges;
+        std::vector<int> edgeIds;
         std::bitset<constants::EDGE_TOTAL> edgeSet;
         std::string output;
         int64_t distance;
@@ -289,6 +290,7 @@ namespace history {
         queries.back().edgeSet.reset();
         for (const auto& edge : edges) {
             const int id = edge.getIdFast();
+            queries.back().edgeIds.push_back(id);
             queries.back().edgeSet.set(id);
             visit[id] += 1.0; // / edges.size();
             averageSum[id] += distance / double(edges.size());
@@ -392,8 +394,8 @@ namespace estimate {
         for (const int qId : edgeId2HistoryIds[id]) {
             const auto& query = history::queries[qId];
             double sum        = 0;
-            for (const auto& e : query.edges) {
-                sum += estimatedEdgeCost[e.getIdFast()];
+            for (const auto& id : query.edgeIds) {
+                sum += estimatedEdgeCost[id];
             }
             points.push_back(query.distance - sum);
         }
@@ -439,10 +441,10 @@ namespace estimate {
             {
                 std::vector<double> errors;
                 double errorSum = 0;
-                for (const auto query : history::queries) {
+                for (const auto& query : history::queries) {
                     double sum = 0;
-                    for (const auto& e : query.edges) {
-                        sum += estimatedEdgeCost[e.getIdFast()];
+                    for (const auto& e : query.edgeIds) {
+                        sum += estimatedEdgeCost[e];
                     }
                     errors.push_back(abs(sum - query.distance));
                     errorSum += errors.back();
@@ -511,15 +513,21 @@ namespace estimate {
                   old.begin());
         std::fill(estimatedEdgeCost.begin(), estimatedEdgeCost.end(), 0.0);
 
-        for (const auto query : history::queries) {
-            double sum = 0;
-            for (const auto e : query.edges) {
-                sum += old[e.getIdFast()];
+        for (const auto& query : history::queries) {
+            double sum   = 0;
+            const int sz = query.edgeIds.size();
+            for (int i = 0; i < sz; i++) {
+                sum += old[query.edgeIds[i]];
             }
-            for (const auto e : query.edges) {
-                const int id   = e.getIdFast();
-                const double s = query.distance * (old[id] / sum);
-                estimatedEdgeCost[id] += std::min(std::max(1000.0, s), 9000.0);
+            for (int i = 0; i < sz; i++) {
+                double s = query.distance * (old[query.edgeIds[i]] / sum);
+                if (s < 1000.0) {
+                    s = 1000;
+                }
+                else if (s > 9000.0) {
+                    s = 9000;
+                }
+                estimatedEdgeCost[query.edgeIds[i]] += s;
             }
         }
         for (int id : history::usedEdgeIds) {
@@ -821,8 +829,8 @@ void solve() {
 
         if (q > 100) {
             double sum = 0;
-            for (const auto& it : history::queries.back().edges) {
-                sum += estimate::estimatedEdgeCost[it.getIdFast()];
+            for (const int id : history::queries.back().edgeIds) {
+                sum += estimate::estimatedEdgeCost[id];
             }
             const double diff = sum - distance;
             diffs += abs(diff);
