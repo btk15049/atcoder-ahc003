@@ -2,8 +2,8 @@
 // clang-format off
  #pragma GCC optimize("Ofast")
  #pragma GCC target("sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx")
- #pragma GCC optimize("O3,omit-frame-pointer,inline")
- #pragma GCC optimize("unroll-loops")
+ // #pragma GCC optimize("O3,omit-frame-pointer,inline")
+ // #pragma GCC optimize("unroll-loops")
 // clang-format on
 #endif
 
@@ -105,7 +105,25 @@ namespace constants {
     std::optional<std::array<std::array<int, constants::C>, constants::R>> v =
         std::nullopt;
     inline bool hasAns() { return h.has_value(); }
-}; // namespace constants
+
+    namespace ucb1 {
+        using namespace std;
+        constexpr array<array<double, Q>, Q> gen() {
+            array<array<double, Q>, Q> ret = {};
+            // for (int i = 1; i < Q; i++) {
+            //     for (int j = 1; j <= i; j++) {
+            //         ret[i][j] =
+            //             parameter::UCB1_BIAS * std::sqrt(2 * std::log(i) /
+            //             j);
+            //     }
+            // }
+            return ret;
+        }
+
+        // expected[total][current]
+        constexpr auto expected = gen();
+    } // namespace ucb1
+};    // namespace constants
 
 
 namespace entity {
@@ -377,23 +395,34 @@ namespace estimate {
 
     } // namespace forOptimizeOne
 
+    inline double estimatedSum(const history::Query& query) {
+        const int size  = query.edgeIds.size();
+        const int* data = query.edgeIds.data();
+        double sum      = 0;
+        for (int i = 0; i < size; i++) {
+            sum += estimatedEdgeCost[data[i]];
+        }
+        return sum;
+    }
+
     // TODO: 高速化
     inline void optimizeOne(int id) {
         using namespace forOptimizeOne;
         points.clear();
 
-        for (const int qId : edgeId2HistoryIds[id]) {
+        const int size = edgeId2HistoryIds[id].size();
+        const int* ids = edgeId2HistoryIds[id].data();
+
+        for (int i = 0; i < size; i++) {
+            const int qId     = ids[i];
             const auto& query = history::queries[qId];
-            double sum        = 0;
-            for (const auto& eid : query.edgeIds) {
-                sum += estimatedEdgeCost[eid];
-            }
+            const double sum  = estimatedSum(query);
             points.push_back(query.distance - sum);
         }
 
         const int midPos = points.size() / 2;
-        std::nth_element(points.begin(), points.end(),
-                         std::next(points.begin(), midPos));
+        std::nth_element(points.begin(), std::next(points.begin(), midPos),
+                         points.end());
         estimatedEdgeCost[id] += points[midPos] * 0.001;
         estimatedEdgeCost[id] =
             std::max(1000.0, std::min(9000.0, estimatedEdgeCost[id]));
@@ -504,25 +533,36 @@ namespace estimate {
                   old.begin());
         std::fill(estimatedEdgeCost.begin(), estimatedEdgeCost.end(), 0.0);
 
-        for (const auto& query : history::queries) {
-            double sum   = 0;
-            const int sz = query.edgeIds.size();
-            for (int i = 0; i < sz; i++) {
-                sum += old[query.edgeIds[i]];
-            }
-            for (int i = 0; i < sz; i++) {
-                double s = query.distance * (old[query.edgeIds[i]] / sum);
-                if (s < 1000.0) {
-                    s = 1000;
+        {
+            const int qSz = history::queries.size();
+            for (int qi = 0; qi < qSz; qi++) {
+                const auto& query = history::queries[qi];
+                double sum        = 0;
+                const int sz      = query.edgeIds.size();
+                const int* ids    = query.edgeIds.data();
+                const double* o   = old.data();
+                for (int i = 0; i < sz; i++) {
+                    sum += o[ids[i]];
                 }
-                else if (s > 9000.0) {
-                    s = 9000;
+                for (int i = 0; i < sz; i++) {
+                    double s = query.distance * (o[ids[i]] / sum);
+                    if (s < 1000.0) {
+                        s = 1000;
+                    }
+                    else if (s > 9000.0) {
+                        s = 9000;
+                    }
+                    estimatedEdgeCost[ids[i]] += s;
                 }
-                estimatedEdgeCost[query.edgeIds[i]] += s;
             }
         }
-        for (int id : history::usedEdgeIds) {
-            estimatedEdgeCost[id] /= history::useCount[id];
+        {
+            const int size = history::usedEdgeIds.size();
+            const int* ids = history::usedEdgeIds.data();
+            for (int i = 0; i < size; i++) {
+                const int id = ids[i];
+                estimatedEdgeCost[id] /= history::useCount[id];
+            }
         }
     }
 
@@ -580,9 +620,20 @@ namespace dijkstra {
         const double average =
             estimate::estimatedEdgeCost[id]; // history::averageSum[id] /
                                              // history::useCount[id];
-        const double expected =
-            std::sqrt(2 * std::log(history::totalVisits) / history::visit[id]);
-        return std::max(1000.0, average - parameter::UCB1_BIAS * expected);
+        return std::max(1000.0,
+                        average
+                            - constants::ucb1::expected[history::totalVisits]
+                                                       [history::visit[id]]);
+    }
+
+    struct HeapElement {
+        cost_t cost;
+        entity::Point p;
+        HeapElement(cost_t cost, entity::Point p) : cost(cost), p(p) {}
+    };
+
+    bool operator<(HeapElement lhs, HeapElement rhs) {
+        return lhs.cost > rhs.cost;
     }
 
     auto dijkstra(Pair st) {
@@ -592,8 +643,7 @@ namespace dijkstra {
             to.cost = 1e9; // TODO: 見直す
         }
 
-        using T = std::tuple<cost_t, entity::Point>;
-        std::priority_queue<T, std::vector<T>, std::greater<T>> que;
+        std::priority_queue<HeapElement> que;
 
         auto push = [&que](int prevDir, entity::Point next, cost_t c) {
             auto& target = table[next.getId()];
@@ -607,15 +657,16 @@ namespace dijkstra {
         push(0, t, 0);
 
         while (!que.empty()) {
-            const auto [c, cur] = que.top();
-            const double currentCost =
-                c; // ラムダで参照するのにコピーが必要らしい、不便
+            const auto top = que.top();
             que.pop();
+            const auto c   = top.cost;
+            const auto cur = top.p;
 
-            if (table[cur.getId()].cost < currentCost) continue;
+            if (table[cur.getId()].cost < c) continue;
+            if (cur.getId() == s.getId()) break;
 
             cur.adjForEach([&](entity::Point nx, int prevDir) {
-                push(prevDir, nx, currentCost + calcUCB1(nx.getEdge(prevDir)));
+                push(prevDir, nx, c + calcUCB1(nx.getEdge(prevDir)));
             });
         }
         std::vector<entity::Edge> edges;
