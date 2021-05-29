@@ -54,12 +54,6 @@ namespace parameter {
     constexpr int ESTIMATE_COUNT      = 30;
 #endif
 
-#ifdef SMOOTH_COUNT_PARAM
-    constexpr int SMOOTH_COUNT = SMOOTH_COUNT_PARAM;
-#else
-    constexpr int SMOOTH_COUNT        = 25;
-#endif
-
 #ifdef OLD_BIAS_PARAM
     constexpr double OLD_BIAS = OLD_BIAS_PARAM;
 #else
@@ -366,7 +360,8 @@ namespace estimate {
                     ret         = i;
                 }
             }
-            if (xorshift::getInt(2) == 0) ret = (ret + constants::N / 2) / 2;
+            if (xorshift::getInt(2) == 0)
+                ret = (ret + xorshift::getInt(constants::N)) / 2;
             return ret;
         };
     } // namespace forSmoothing
@@ -508,6 +503,7 @@ namespace estimate {
         }
     }
 
+
     inline void smoothingAll() {
         std::copy(estimatedEdgeCost.begin(), estimatedEdgeCost.end(),
                   old.begin());
@@ -535,16 +531,19 @@ namespace estimate {
         }
     }
 
-    void computeEdgeCost(int turn) {
+    inline double cwwFunction(int x) {
+        return (x - 200) * (x - 200) * (x - 1400) / (4 * 1e8) + 1;
+    }
+
+    void computeEdgeCost([[maybe_unused]] int turn) {
         forOptimizeOne::prepare();
 
         setAverage(turn);
 
-        // const int tl = std::max(5.0, 30 * (1 - turn / 1000.0));
-        // const int t  = tl + 5;
+        const int threshold = cwwFunction(turn) * parameter::ESTIMATE_COUNT;
+        DBG(threshold);
 
-
-        for (int _ = 0; _ < parameter::ESTIMATE_COUNT; _++) {
+        for (int _ = 0; _ < threshold; _++) {
             smoothingAll();
 
             // for (int i = 0; i < 100; i++) {
@@ -552,15 +551,16 @@ namespace estimate {
             //         history::usedEdgeIds.size())]);
             // }
 
-            if (_ < parameter::SMOOTH_COUNT) {
-                // O(RC)
-                for (int r = 0; r < constants::R; r++) {
-                    smoothing(entity::hIds[r]);
-                }
-                for (int c = 0; c < constants::C; c++) {
-                    smoothing(entity::vIds[c]);
-                }
+            // O(RC)
+            for (int r = 0; r < constants::R; r++) {
+                smoothing(entity::hIds[r]);
             }
+            for (int c = 0; c < constants::C; c++) {
+                smoothing(entity::vIds[c]);
+            }
+        }
+        for (int _ = 0; _ < 5; _++) {
+            smoothingAll();
         }
 
         showDetail();
