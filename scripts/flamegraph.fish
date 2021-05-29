@@ -7,7 +7,7 @@ mkdir $WORKDIR/logs
 mkdir $WORKDIR/scores
 
 set BIN $WORKDIR/a.out
-g++ $REPO_ROOT/main.cpp -std=c++17 -Wall -Wextra -o $BIN
+g++ $REPO_ROOT/main.cpp -std=c++17 -Wall -Wextra -o $BIN -DFLAME_GRAPH
 
 cd $REPO_ROOT/tools
 
