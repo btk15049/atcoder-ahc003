@@ -54,13 +54,6 @@ namespace parameter {
     constexpr int ESTIMATE_COUNT      = 30;
 #endif
 
-#ifdef OLD_BIAS_PARAM
-    constexpr double OLD_BIAS = OLD_BIAS_PARAM;
-#else
-    constexpr double OLD_BIAS         = 0.3;
-#endif
-
-
 } // namespace parameter
 
 namespace xorshift {
@@ -360,8 +353,11 @@ namespace estimate {
                     ret         = i;
                 }
             }
-            if (xorshift::getInt(2) == 0)
-                ret = (ret + xorshift::getInt(constants::N)) / 2;
+            const int t = xorshift::getInt(constants::N);
+            const int d = constants::N - abs(t - ret) - 1;
+            if (xorshift::getInt(constants::N) < d) {
+                ret = (ret + t) / 2;
+            }
             return ret;
         };
     } // namespace forSmoothing
@@ -389,17 +385,16 @@ namespace estimate {
         for (const int qId : edgeId2HistoryIds[id]) {
             const auto& query = history::queries[qId];
             double sum        = 0;
-            for (const auto& id : query.edgeIds) {
-                sum += estimatedEdgeCost[id];
+            for (const auto& eid : query.edgeIds) {
+                sum += estimatedEdgeCost[eid];
             }
             points.push_back(query.distance - sum);
         }
 
-        // 中央値が見つけられればよいので、乱択 O(n) に変える
         const int midPos = points.size() / 2;
         std::nth_element(points.begin(), points.end(),
                          std::next(points.begin(), midPos));
-        estimatedEdgeCost[id] += points[midPos] * 0.1;
+        estimatedEdgeCost[id] += points[midPos] * 0.001;
         estimatedEdgeCost[id] =
             std::max(1000.0, std::min(9000.0, estimatedEdgeCost[id]));
     };
@@ -546,11 +541,6 @@ namespace estimate {
         for (int _ = 0; _ < threshold; _++) {
             smoothingAll();
 
-            // for (int i = 0; i < 100; i++) {
-            //     optimizeOne(history::usedEdgeIds[xorshift::getInt(
-            //         history::usedEdgeIds.size())]);
-            // }
-
             // O(RC)
             for (int r = 0; r < constants::R; r++) {
                 smoothing(entity::hIds[r]);
@@ -559,6 +549,12 @@ namespace estimate {
                 smoothing(entity::vIds[c]);
             }
         }
+
+        for (int i = 0; i < 500; i++) {
+            optimizeOne(history::usedEdgeIds[xorshift::getInt(
+                history::usedEdgeIds.size())]);
+        }
+
         for (int _ = 0; _ < 5; _++) {
             smoothingAll();
         }

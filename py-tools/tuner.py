@@ -10,7 +10,7 @@ from typing import List
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STUDY_NAME = 'chiwawa-study'
 DB_PATH = f'{ROOT}/optuna.db'
-TESTCASES = glob.glob(f'{ROOT}/tools/in2/*')
+TESTCASES = sorted(glob.glob(f'{ROOT}/tools/in/*'))
 
 
 @dataclass
@@ -31,16 +31,16 @@ def objective(trial):
     ucb1_bias = trial.suggest_uniform('ucb1_bias', 0, 1000)
     initial_distance = trial.suggest_int('initial_distance', 0, 5000)
     estimate_count = trial.suggest_int('estimate_count', 0, 100)
-    smooth_count = trial.suggest_int('smooth_count', 0, 100)
-    old_bias = trial.suggest_uniform('old_bias', 0, 1)
+    # smooth_count = trial.suggest_int('smooth_count', 0, 100)
+    # old_bias = trial.suggest_uniform('old_bias', 0, 1)
 
     cpp = f'{ROOT}/main.cpp'
     bin = f'/tmp/bin-{str(uuid.uuid4())}.out'
     simulate.compile(cpp, bin, UCB1_BIAS_PARAM=str(ucb1_bias),
                      INITIAL_DISTANCE_PARAM=str(initial_distance),
                      ESTIMATE_COUNT_PARAM=str(estimate_count),
-                     SMOOTH_COUNT_PARAM=str(smooth_count),
-                     OLD_BIAS_PARAM=str(old_bias),
+                     # SMOOTH_COUNT_PARAM=str(smooth_count),
+                     # OLD_BIAS_PARAM=str(old_bias),
                      )
 
     result = Result()
@@ -62,7 +62,7 @@ def objective(trial):
 
 
 if __name__ == '__main__':
-    pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+    pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=30)
     study = optuna.create_study(
         study_name=STUDY_NAME, storage=f'sqlite:///{DB_PATH}', load_if_exists=True, direction='maximize', pruner=pruner)
 
