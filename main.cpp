@@ -43,25 +43,25 @@ namespace parameter {
 #ifdef UCB1_BIAS_PARAM
     constexpr double UCB1_BIAS = UCB1_BIAS_PARAM;
 #else
-    constexpr double UCB1_BIAS        = 36.22;
+    constexpr double UCB1_BIAS        = 65.7661232858441;
 #endif
 
 #ifdef INITIAL_DISTANCE_PARAM
     constexpr double INITIAL_DISTANCE = INITIAL_DISTANCE_PARAM;
 #else
-    constexpr double INITIAL_DISTANCE = 3167;
+    constexpr double INITIAL_DISTANCE = 2913;
 #endif
 
 #ifdef ESTIMATE_COUNT_PARAM
     constexpr int ESTIMATE_COUNT = ESTIMATE_COUNT_PARAM;
 #else
-    constexpr int ESTIMATE_COUNT      = 35;
+    constexpr int ESTIMATE_COUNT      = 39;
 #endif
 
 #ifdef POSITION_BIAS_PARAM
     constexpr double POSITION_BIAS = POSITION_BIAS_PARAM;
 #else
-    constexpr double POSITION_BIAS    = 3.587;
+    constexpr double POSITION_BIAS    = 4.252850928149812;
 #endif
 
 } // namespace parameter
@@ -116,13 +116,24 @@ namespace constants {
         std::nullopt;
     inline bool hasAns() { return h.has_value(); }
 
+    template <size_t size>
+    constexpr std::array<double, size> genInv() {
+        std::array<double, size> ret = {};
+        for (size_t i = 1; i < size; i++) {
+            ret[i] = 1.0 / i;
+        }
+        return ret;
+    }
+    constexpr auto _inv         = genInv<3000>();
+    constexpr const double* inv = _inv.data();
+    ;
+
     namespace ucb1 {
         using namespace std;
 
         inline double val(int total, int cur) {
-            return parameter::UCB1_BIAS * std::sqrt(2 * std::log(total) / cur);
+            return std::sqrt(2 * std::log(total) / cur);
         }
-
 
         // expected[total][current]
         double expected[Q][Q];
@@ -257,14 +268,12 @@ namespace entity {
                         idMap[d][q.r][q.c] = Edge(q, d).getId();
                         double diff        = 0;
                         if (p.r != q.r) {
-                            diff = std::max(
-                                std::abs(q.r - (constants::R - 1) / 2.0),
-                                std::abs(p.r - (constants::R - 1) / 2.0));
+                            diff = std::max(std::abs(q.r - constants::R / 2),
+                                            std::abs(p.r - constants::R / 2));
                         }
                         else {
-                            diff = std::max(
-                                std::abs(q.c - (constants::C - 1) / 2.0),
-                                std::abs(p.c - (constants::C - 1) / 2.0));
+                            diff = std::max(std::abs(q.c - constants::C / 2),
+                                            std::abs(p.c - constants::C / 2));
                         }
                         positionBonus[d][q.r][q.c] = diff;
                     });
@@ -302,10 +311,11 @@ namespace history {
     std::vector<Query> queries;
 
     int totalVisits = 0;
-    std::array<int, constants::R * constants::C * 2> visit; // ucb の 分母に使う
-    std::array<int, constants::R * constants::C * 2> useCount;
+    std::array<int, constants::EDGE_TOTAL> visit; // ucb の 分母に使う
+    std::array<int, constants::EDGE_TOTAL> visitBlock; // ucb の 分母に使う
+    std::array<int, constants::EDGE_TOTAL> useCount;
     std::vector<int> usedEdgeIds;
-    std::array<double, constants::R * constants::C * 2> averageSum;
+    std::array<double, constants::EDGE_TOTAL> averageSum;
 
 
     void init() {
@@ -332,7 +342,6 @@ namespace history {
             useCount[id]++;
             if (useCount[id] == 1) usedEdgeIds.push_back(id);
         }
-        assert(queries.back().edgeSet.count() > 0u);
         totalVisits++;
     }
 } // namespace history
@@ -363,14 +372,17 @@ namespace estimate {
 
         // cnt = 0 のときに死ぬので注意
         inline double calcAverage(int bg, int ed) {
-            return (sums[ed] - sums[bg]) / (cnts[ed] - cnts[bg]);
+            return (sums[ed] - sums[bg]) * constants::inv[cnts[ed] - cnts[bg]];
         }
 
         inline double calcVariance(int bg, int ed) {
             const int cnt = cnts[ed] - cnts[bg];
-            if (cnt == 0) return 0.0;
-            const double average = calcAverage(bg, ed);
-            return (squareSums[ed] - squareSums[bg]) / cnt - average * average;
+            if (cnt <= 1) return 0.0;
+            const double average = (sums[ed] - sums[bg]) * constants::inv[cnt];
+            const double ret =
+                (squareSums[ed] - squareSums[bg]) * constants::inv[cnt]
+                - average * average;
+            return ret;
         };
 
         inline void prepare(const uint16_t* edgeIds) {
@@ -392,8 +404,7 @@ namespace estimate {
             if (isM1) return 0;
             int ret            = constants::N / 2;
             double minVariance = 1e18;
-
-            for (int i = 0; i <= constants::N - 1; i++) {
+            for (int i = 0; i < constants::N - 1; i++) {
                 const double variance = std::max(
                     calcVariance(0, i), calcVariance(i, constants::N - 1));
                 if (minVariance > variance) {
@@ -567,15 +578,16 @@ namespace estimate {
             const int qSz = history::queries.size();
             for (int qi = 0; qi < qSz; qi++) {
                 const auto& query = history::queries[qi];
-                double sum        = 0;
                 const int sz      = query.edgeIds.size();
                 const int* ids    = query.edgeIds.data();
                 const double* o   = old.data();
+                double sum        = 0;
                 for (int i = 0; i < sz; i++) {
                     sum += o[ids[i]];
                 }
+                const double rs = 1.0 / sum;
                 for (int i = 0; i < sz; i++) {
-                    double s = query.distance * (o[ids[i]] / sum);
+                    double s = query.distance * (o[ids[i]] * rs);
                     if (s < 1000.0) {
                         s = 1000;
                     }
@@ -591,7 +603,7 @@ namespace estimate {
             const int* ids = history::usedEdgeIds.data();
             for (int i = 0; i < size; i++) {
                 const int id = ids[i];
-                estimatedEdgeCost[id] /= history::useCount[id];
+                estimatedEdgeCost[id] *= constants::inv[history::useCount[id]];
             }
         }
     }
@@ -654,8 +666,10 @@ namespace dijkstra {
         return std::max(1000.0,
                         average
                             - constants::ucb1::expected[history::totalVisits]
-                                                       [history::visit[id]])
-               - e.getPositionBonus() * parameter::POSITION_BIAS;
+                                                       [history::visit[id]]
+                                  * parameter::UCB1_BIAS)
+               - ((1000 - history::totalVisits) / 1000.0) * e.getPositionBonus()
+                     * parameter::POSITION_BIAS;
     }
 
     struct HeapElement {
@@ -791,93 +805,6 @@ void showStat() {
     }
 }
 
-namespace randomWork {
-    std::array<std::array<int, constants::C + 2>, constants::R + 2> board;
-
-    constexpr int NG     = -1;
-    int currentTimeStamp = 0;
-    int ord[24][4];
-    void init() {
-        {
-            int tmp[4], id = 0;
-            std::iota(tmp, tmp + 4, 0);
-            do {
-                ord[id][0] = tmp[0];
-                ord[id][1] = tmp[1];
-                ord[id][2] = tmp[2];
-                ord[id][3] = tmp[3];
-                id++;
-            } while (std::next_permutation(tmp, tmp + 4));
-        }
-        currentTimeStamp = 0;
-        for (int i = 0; i < constants::R + 2; i++) {
-            for (int j = 0; j < constants::C + 2; j++) {
-                board[i][j] = currentTimeStamp;
-            }
-        }
-
-        for (int i : {0, constants::R + 1}) {
-            for (int j = 0; j < constants::C + 2; j++) {
-                board[i][j] = NG;
-            }
-        }
-        for (int i = 0; i < constants::R + 2; i++) {
-            board[i].front() = board[i].back() = NG;
-        }
-        currentTimeStamp++;
-    }
-
-    inline void put(entity::Point p) { board[p.r + 1][p.c + 1] = NG; }
-
-    std::vector<entity::Point> stack;
-
-    inline void update(entity::Point s) {
-        currentTimeStamp++;
-        stack.clear();
-
-        auto push = [&](entity::Point p, [[maybe_unused]] int _) {
-            if (board[p.r + 1][p.c + 1] == NG) {
-                return;
-            }
-            if (board[p.r + 1][p.c + 1] == currentTimeStamp) {
-                return;
-            }
-            board[p.r + 1][p.c + 1] = currentTimeStamp;
-            stack.emplace_back(p);
-        };
-
-        push(s, 0);
-        while (!stack.empty()) {
-            const auto p = stack.back();
-            stack.pop_back();
-            p.adjForEach(push);
-        }
-    }
-
-    inline bool isOK(entity::Point p) {
-        return board[p.r + 1][p.c + 1] == currentTimeStamp;
-    }
-
-    void run(output::Builder& builder, entity::Point t) {
-        init();
-        while (builder.getCurrent().getId() != t.getId()) {
-            put(builder.getCurrent());
-            update(t);
-
-            const int r = abs(rand()) % 24;
-            for (int i = 0; i < 4; i++) {
-                const int d  = ord[r][i];
-                const auto p = builder.getCurrent().neighbor(d);
-                if (isOK(p)) {
-                    // std::cerr << p << std::endl;
-                    assert(builder.add(d));
-                    break;
-                }
-            }
-        }
-    }
-
-} // namespace randomWork
 
 void solve() {
     history::init();
@@ -891,16 +818,9 @@ void solve() {
 
         output::Builder builder(s);
 
-
-        if (q < 0) {
-            randomWork::run(builder, t);
-        }
-        else {
-            const auto [edges, cost] = dijkstra::dijkstra(in);
-            for (auto& it : edges) {
-                builder.add(it.dir);
-                assert(it.versus().p == builder.getCurrent());
-            }
+        const auto [edges, cost] = dijkstra::dijkstra(in);
+        for (auto& it : edges) {
+            builder.add(it.dir);
         }
 
         auto distance = builder.fix(std::cin, std::cout);
@@ -926,5 +846,9 @@ void solve() {
 }
 
 #ifndef TEST
-int main() { solve(); }
+int main() {
+    std::cin.tie(nullptr);
+    std::ios::sync_with_stdio(false);
+    solve();
+}
 #endif

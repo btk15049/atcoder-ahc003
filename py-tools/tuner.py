@@ -66,6 +66,6 @@ if __name__ == '__main__':
     study = optuna.create_study(
         study_name=STUDY_NAME, storage=f'sqlite:///{DB_PATH}', load_if_exists=True, direction='maximize', pruner=pruner)
 
-    study.optimize(objective, n_trials=200)
+    study.optimize(objective, n_trials=20)
     print(study.best_trial)
     print(study.best_params)
