@@ -3,7 +3,9 @@
  #pragma GCC optimize("Ofast")
  #pragma GCC target("sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx")
  #ifndef FLAME_GRAPH
- #pragma GCC optimize("O3,omit-frame-pointer,inline")
+ #pragma GCC optimize("O3")
+ #pragma GCC optimize("omit-frame-pointer")
+ #pragma GCC optimize("inline")
  #pragma GCC optimize("unroll-loops")
  #endif
 // clang-format on
@@ -41,19 +43,25 @@ namespace parameter {
 #ifdef UCB1_BIAS_PARAM
     constexpr double UCB1_BIAS = UCB1_BIAS_PARAM;
 #else
-    constexpr double UCB1_BIAS        = 45.5;
+    constexpr double UCB1_BIAS        = 36.22;
 #endif
 
 #ifdef INITIAL_DISTANCE_PARAM
     constexpr double INITIAL_DISTANCE = INITIAL_DISTANCE_PARAM;
 #else
-    constexpr double INITIAL_DISTANCE = 3088;
+    constexpr double INITIAL_DISTANCE = 3167;
 #endif
 
 #ifdef ESTIMATE_COUNT_PARAM
     constexpr int ESTIMATE_COUNT = ESTIMATE_COUNT_PARAM;
 #else
-    constexpr int ESTIMATE_COUNT      = 30;
+    constexpr int ESTIMATE_COUNT      = 35;
+#endif
+
+#ifdef POSITION_BIAS_PARAM
+    constexpr double POSITION_BIAS = POSITION_BIAS_PARAM;
+#else
+    constexpr double POSITION_BIAS    = 3.587;
 #endif
 
 } // namespace parameter
@@ -67,7 +75,7 @@ namespace xorshift {
 
     struct Generator {
         uint64_t seed;
-        Generator(uint64_t seed = 111111111u) : seed(seed) {}
+        Generator(uint64_t seed = 939393939393llu) : seed(seed) {}
         inline uint64_t gen() {
             seed = next(seed);
             return seed;
@@ -110,20 +118,25 @@ namespace constants {
 
     namespace ucb1 {
         using namespace std;
-        constexpr array<array<double, Q>, Q> gen() {
-            array<array<double, Q>, Q> ret = {};
-            // for (int i = 1; i < Q; i++) {
-            //     for (int j = 1; j <= i; j++) {
-            //         ret[i][j] =
-            //             parameter::UCB1_BIAS * std::sqrt(2 * std::log(i) /
-            //             j);
-            //     }
-            // }
-            return ret;
+
+        inline double val(int total, int cur) {
+            return parameter::UCB1_BIAS * std::sqrt(2 * std::log(total) / cur);
         }
 
+
         // expected[total][current]
-        constexpr auto expected = gen();
+        double expected[Q][Q];
+
+
+        struct cww {
+            cww() {
+                for (int i = 1; i < Q; i++) {
+                    for (int j = 1; j <= i; j++) {
+                        expected[i][j] = val(i, j);
+                    }
+                }
+            }
+        } star;
     } // namespace ucb1
 };    // namespace constants
 
@@ -162,6 +175,7 @@ namespace entity {
     };
 
     uint16_t idMap[constants::DIRECTION_SIZE][constants::R][constants::C];
+    double positionBonus[constants::DIRECTION_SIZE][constants::R][constants::C];
 
     uint16_t hIds[constants::R][constants::C - 1];
     uint16_t vIds[constants::C][constants::R - 1];
@@ -181,6 +195,9 @@ namespace entity {
 
         inline int getIdFast() const { return idMap[dir][p.r][p.c]; }
 
+        inline double getPositionBonus() const {
+            return positionBonus[dir][p.r][p.c];
+        }
 
         inline Edge normalize() const {
             if (dir >= 2) {
@@ -238,6 +255,18 @@ namespace entity {
                     const Point p(r, c);
                     p.adjForEach([&](Point q, int d) {
                         idMap[d][q.r][q.c] = Edge(q, d).getId();
+                        double diff        = 0;
+                        if (p.r != q.r) {
+                            diff = std::max(
+                                std::abs(q.r - (constants::R - 1) / 2.0),
+                                std::abs(p.r - (constants::R - 1) / 2.0));
+                        }
+                        else {
+                            diff = std::max(
+                                std::abs(q.c - (constants::C - 1) / 2.0),
+                                std::abs(p.c - (constants::C - 1) / 2.0));
+                        }
+                        positionBonus[d][q.r][q.c] = diff;
                     });
 
                     if (c < constants::C - 1) {
@@ -273,8 +302,7 @@ namespace history {
     std::vector<Query> queries;
 
     int totalVisits = 0;
-    std::array<double, constants::R * constants::C * 2>
-        visit; // ucb の 分母に使う
+    std::array<int, constants::R * constants::C * 2> visit; // ucb の 分母に使う
     std::array<int, constants::R * constants::C * 2> useCount;
     std::vector<int> usedEdgeIds;
     std::array<double, constants::R * constants::C * 2> averageSum;
@@ -282,7 +310,7 @@ namespace history {
 
     void init() {
         queries.reserve(constants::Q);
-        std::fill(visit.begin(), visit.end(), 0.0);
+        std::fill(visit.begin(), visit.end(), 0);
         std::fill(useCount.begin(), useCount.end(), 0);
         std::fill(averageSum.begin(), averageSum.end(), 0.0);
     }
@@ -299,7 +327,7 @@ namespace history {
             const int id = edge.getIdFast();
             queries.back().edgeIds.push_back(id);
             queries.back().edgeSet.set(id);
-            visit[id] += 1.0; // / edges.size();
+            visit[id]++; // / edges.size();
             averageSum[id] += distance / double(edges.size());
             useCount[id]++;
             if (useCount[id] == 1) usedEdgeIds.push_back(id);
@@ -615,17 +643,19 @@ namespace dijkstra {
 
     std::array<To, constants::R * constants::C> table;
 
-
     inline double calcUCB1(entity::Edge e) {
         const int id = e.getIdFast();
-        if (history::visit[id] == 0) return parameter::INITIAL_DISTANCE;
+        if (history::visit[id] == 0)
+            return parameter::INITIAL_DISTANCE
+                   - e.getPositionBonus() * parameter::POSITION_BIAS;
         const double average =
             estimate::estimatedEdgeCost[id]; // history::averageSum[id] /
                                              // history::useCount[id];
         return std::max(1000.0,
                         average
                             - constants::ucb1::expected[history::totalVisits]
-                                                       [history::visit[id]]);
+                                                       [history::visit[id]])
+               - e.getPositionBonus() * parameter::POSITION_BIAS;
     }
 
     struct HeapElement {

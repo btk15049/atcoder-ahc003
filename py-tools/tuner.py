@@ -29,10 +29,10 @@ class Result:
 
 def objective(trial):
     ucb1_bias = trial.suggest_uniform('ucb1_bias', 0, 1000)
-    initial_distance = trial.suggest_int('initial_distance', 0, 5000)
-    estimate_count = trial.suggest_int('estimate_count', 0, 100)
+    initial_distance = trial.suggest_int('initial_distance', 500, 5000)
+    estimate_count = trial.suggest_int('estimate_count', 0, 40)
     # smooth_count = trial.suggest_int('smooth_count', 0, 100)
-    # old_bias = trial.suggest_uniform('old_bias', 0, 1)
+    position_bias = trial.suggest_uniform('position_bias', 0, 30)
 
     cpp = f'{ROOT}/main.cpp'
     bin = f'/tmp/bin-{str(uuid.uuid4())}.out'
@@ -40,7 +40,7 @@ def objective(trial):
                      INITIAL_DISTANCE_PARAM=str(initial_distance),
                      ESTIMATE_COUNT_PARAM=str(estimate_count),
                      # SMOOTH_COUNT_PARAM=str(smooth_count),
-                     # OLD_BIAS_PARAM=str(old_bias),
+                     POSITION_BIAS_PARAM=str(position_bias),
                      )
 
     result = Result()
